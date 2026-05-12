@@ -28,12 +28,20 @@ class JsonRpcServer(private val agent: DatabaseAgent) {
         val method = req.get("method").asString
         val params = req.getAsJsonObject("params") ?: JsonObject()
 
+        val response = JsonObject()
+        response.addProperty("jsonrpc", "2.0")
+        response.add("id", id)
+
         return try {
             val result = dispatch(method, params)
-            """{"jsonrpc":"2.0","id":${id},"result":${gson.toJson(result)}}"""
+            response.add("result", gson.toJsonTree(result))
+            gson.toJson(response)
         } catch (e: Exception) {
-            val msg = e.message?.replace("\"", "\\\"") ?: "Unknown error"
-            """{"jsonrpc":"2.0","id":${id},"error":{"code":-1,"message":"${msg}"}}"""
+            val error = JsonObject()
+            error.addProperty("code", -1)
+            error.addProperty("message", e.message ?: "Unknown error")
+            response.add("error", error)
+            gson.toJson(response)
         }
     }
 
