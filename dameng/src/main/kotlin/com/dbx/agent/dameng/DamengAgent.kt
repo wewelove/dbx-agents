@@ -238,6 +238,26 @@ class DamengAgent : DatabaseAgent {
     override fun executeQuery(sql: String, schema: String?): QueryResult {
         val conn = requireConnection()
         val trimmedSql = sql.trim().trimEnd(';')
+        val upperSql = trimmedSql.uppercase().trimStart()
+
+        // Translate transaction control to JDBC calls
+        if (upperSql == "BEGIN" || upperSql == "BEGIN TRANSACTION") {
+            val start = System.currentTimeMillis()
+            conn.autoCommit = false
+            return QueryResult(emptyList(), emptyList(), 0, System.currentTimeMillis() - start)
+        }
+        if (upperSql == "COMMIT") {
+            val start = System.currentTimeMillis()
+            conn.commit()
+            conn.autoCommit = true
+            return QueryResult(emptyList(), emptyList(), 0, System.currentTimeMillis() - start)
+        }
+        if (upperSql == "ROLLBACK") {
+            val start = System.currentTimeMillis()
+            conn.rollback()
+            conn.autoCommit = true
+            return QueryResult(emptyList(), emptyList(), 0, System.currentTimeMillis() - start)
+        }
 
         // Set schema if provided
         if (!schema.isNullOrBlank()) {
@@ -247,7 +267,6 @@ class DamengAgent : DatabaseAgent {
         }
 
         val startTime = System.currentTimeMillis()
-        val upperSql = trimmedSql.uppercase().trimStart()
         val isQuery = QUERY_PREFIXES.any { upperSql.startsWith(it) }
 
         if (isQuery) {
