@@ -14,7 +14,7 @@ class DamengAgent : DatabaseAgent {
         private const val MAX_ROWS = 10000
 
         private val SYSTEM_USERS = setOf(
-            "SYS", "SYSDBA", "SYSAUDITOR", "SYSSSO", "CTISYS",
+            "SYS", "SYSAUDITOR", "SYSSSO", "CTISYS",
             "SYS_DBA", "_SYS_STATISTICS", "SYS_PHM"
         )
 
