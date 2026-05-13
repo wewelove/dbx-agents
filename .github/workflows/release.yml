@@ -98,10 +98,10 @@ jobs:
         shell: bash
         run: |
           ADOPTIUM="https://api.adoptium.net/v3/binary/latest/8/ga"
+          # macos-aarch64 not available for JRE 8; use macos-x64 (runs via Rosetta 2)
           declare -A PLATFORMS=(
             ["linux-x64"]="linux/x64"
             ["linux-aarch64"]="linux/aarch64"
-            ["macos-aarch64"]="mac/aarch64"
             ["macos-x64"]="mac/x64"
             ["windows-x64"]="windows/x64"
           )
@@ -109,13 +109,13 @@ jobs:
             os_arch="${PLATFORMS[$platform]}"
             echo "=== Downloading JRE 8 for $platform ($os_arch) ==="
             if [[ "$platform" == windows-* ]]; then
-              curl -L -o jre8-$platform.zip "$ADOPTIUM/$os_arch/jre/hotspot/normal/eclipse?project=jdk"
+              curl -L -f -o jre8-$platform.zip "$ADOPTIUM/$os_arch/jre/hotspot/normal/eclipse?project=jdk"
               mkdir -p jre8-extract
               unzip -q jre8-$platform.zip -d jre8-extract
               mv jre8-extract/*/ dbx-jre || mv jre8-extract/* dbx-jre
               rm -rf jre8-extract jre8-$platform.zip
             else
-              curl -L -o jre8-$platform.tar.gz "$ADOPTIUM/$os_arch/jre/hotspot/normal/eclipse?project=jdk"
+              curl -L -f -o jre8-$platform.tar.gz "$ADOPTIUM/$os_arch/jre/hotspot/normal/eclipse?project=jdk"
               mkdir -p dbx-jre
               tar xzf jre8-$platform.tar.gz -C dbx-jre --strip-components=1
               rm -f jre8-$platform.tar.gz
@@ -123,6 +123,11 @@ jobs:
             tar czf dbx-jre-8-$platform.tar.gz dbx-jre
             rm -rf dbx-jre
           done
+
+          # macOS aarch64: reuse x64 build (runs via Rosetta 2)
+          if [ -f dbx-jre-8-macos-x64.tar.gz ]; then
+            cp dbx-jre-8-macos-x64.tar.gz dbx-jre-8-macos-aarch64.tar.gz
+          fi
 
           ls -lh dbx-jre-8-*.tar.gz
       - uses: actions/upload-artifact@v4
