@@ -1,10 +1,16 @@
 package com.dbx.agent
 
 import com.google.gson.Gson
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.BufferedReader
 import java.io.InputStreamReader
+
+private fun JsonObject.stringOrNull(key: String): String? {
+    val el = get(key) ?: return null
+    return if (el is JsonNull) null else el.asString
+}
 
 class JsonRpcServer(private val agent: DatabaseAgent) {
     private val gson = Gson()
@@ -78,14 +84,14 @@ class JsonRpcServer(private val agent: DatabaseAgent) {
             )
             "execute_query" -> agent.executeQuery(
                 params.get("sql").asString,
-                params.get("schema")?.asString
+                params.stringOrNull("schema")
             )
             "execute_transaction" -> {
                 val statements = gson.fromJson<List<String>>(
                     params.get("statements"),
                     object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
                 )
-                val schema = params.get("schema")?.asString
+                val schema = params.stringOrNull("schema")
                 agent.executeTransaction(statements, schema)
             }
             "disconnect" -> {
