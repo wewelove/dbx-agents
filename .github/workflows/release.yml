@@ -24,39 +24,54 @@ jobs:
           path: "*/build/libs/dbx-agent-*.jar"
 
   build-jre:
-    strategy:
-      matrix:
-        include:
-          - os: macos-14
-            platform: macos-aarch64
-          - os: macos-13
-            platform: macos-x64
-          - os: ubuntu-latest
-            platform: linux-x64
-          - os: ubuntu-24.04-arm
-            platform: linux-aarch64
-          - os: windows-latest
-            platform: windows-x64
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-      - name: Build minimal JRE
+      - name: Build JRE for all platforms
         shell: bash
         run: |
-          jlink \
-            --add-modules java.base,java.sql,java.sql.rowset,java.naming,java.management,java.desktop,jdk.charsets \
-            --output dbx-jre \
-            --strip-debug --no-header-files --no-man-pages --compress=zip-6
-      - name: Package JRE
-        shell: bash
-        run: tar czf dbx-jre-${{ matrix.platform }}.tar.gz dbx-jre
+          MODULES="java.base,java.sql,java.sql.rowset,java.naming,java.management,java.desktop,jdk.charsets"
+          JLINK_OPTS="--strip-debug --no-header-files --no-man-pages --compress=zip-6"
+
+          # Build native linux-x64 JRE via jlink
+          jlink --add-modules $MODULES $JLINK_OPTS --output dbx-jre
+          tar czf dbx-jre-linux-x64.tar.gz dbx-jre
+          rm -rf dbx-jre
+
+          # Download and jlink for other platforms
+          ADOPTIUM="https://api.adoptium.net/v3/binary/latest/21/ga"
+          declare -A PLATFORMS=(
+            ["macos-aarch64"]="mac/aarch64"
+            ["macos-x64"]="mac/x64"
+            ["linux-aarch64"]="linux/aarch64"
+            ["windows-x64"]="windows/x64"
+          )
+          for platform in "${!PLATFORMS[@]}"; do
+            os_arch="${PLATFORMS[$platform]}"
+            echo "=== Downloading JDK for $platform ($os_arch) ==="
+            curl -L -o jdk-$platform.tar.gz "$ADOPTIUM/$os_arch/jdk/hotspot/normal/eclipse?project=jdk"
+            mkdir -p jdk-$platform
+            tar xzf jdk-$platform.tar.gz -C jdk-$platform --strip-components=1
+            JAVA_HOME_CROSS="jdk-$platform"
+            # Find jmods directory
+            if [ -d "$JAVA_HOME_CROSS/Contents/Home/jmods" ]; then
+              JMODS="$JAVA_HOME_CROSS/Contents/Home/jmods"
+            else
+              JMODS="$JAVA_HOME_CROSS/jmods"
+            fi
+            jlink --module-path "$JMODS" --add-modules $MODULES $JLINK_OPTS --output dbx-jre
+            tar czf dbx-jre-$platform.tar.gz dbx-jre
+            rm -rf dbx-jre jdk-$platform jdk-$platform.tar.gz
+          done
+
+          ls -lh dbx-jre-*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: jre-${{ matrix.platform }}
-          path: "dbx-jre-${{ matrix.platform }}.tar.gz"
+          name: jre-all
+          path: "dbx-jre-*.tar.gz"
 
   release:
     needs: [build-agents, build-jre]
