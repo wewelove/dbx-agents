@@ -1,0 +1,22 @@
+plugins {
+    kotlin("jvm")
+    id("com.gradleup.shadow")
+}
+
+dependencies {
+    implementation(project(":common"))
+    implementation(fileTree("libs") { include("*.jar") })
+    implementation("com.h2database:h2:2.3.232")
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+tasks.shadowJar {
+    archiveBaseName.set("dbx-agent-h2")
+    archiveClassifier.set("")
+    manifest {
+        attributes("Main-Class" to "com.dbx.agent.h2.H2AgentKt")
+    }
+}

@@ -1,0 +1,222 @@
+package com.dbx.agent.neo4j
+
+import com.dbx.agent.*
+import java.sql.Connection
+import java.sql.DriverManager
+
+class Neo4jAgent : DatabaseAgent {
+
+    private var connection: Connection? = null
+
+    override fun getConnection(): Connection? = connection
+
+    companion object {
+        private const val MAX_ROWS = 10000
+        private val QUERY_PREFIXES = listOf("MATCH", "RETURN", "WITH", "CALL", "SHOW", "UNWIND", "OPTIONAL")
+    }
+
+    override fun setSchemaSQL(schema: String): String = ""
+
+    override fun connect(params: ConnectParams) {
+        Class.forName("org.neo4j.jdbc.Neo4jDriver")
+        val url = "jdbc:neo4j://${params.host}:${params.port}"
+        connection = DriverManager.getConnection(url, params.username, params.password)
+    }
+
+    override fun testConnection(params: ConnectParams): Boolean {
+        Class.forName("org.neo4j.jdbc.Neo4jDriver")
+        val url = "jdbc:neo4j://${params.host}:${params.port}"
+        DriverManager.getConnection(url, params.username, params.password).use { conn ->
+            return conn.isValid(5)
+        }
+    }
+
+    override fun listDatabases(): List<DatabaseInfo> {
+        val conn = requireConnection()
+        val sql = "SHOW DATABASES"
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(sql).use { rs ->
+                return buildList {
+                    while (rs.next()) {
+                        add(DatabaseInfo(rs.getString("name")))
+                    }
+                }
+            }
+        }
+    }
+
+    override fun listSchemas(): List<String> {
+        // Neo4j has no schemas
+        return emptyList()
+    }
+
+    override fun listTables(schema: String): List<TableInfo> {
+        val conn = requireConnection()
+        val sql = "CALL db.labels()"
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(sql).use { rs ->
+                return buildList {
+                    while (rs.next()) {
+                        add(TableInfo(
+                            name = rs.getString(1),
+                            table_type = "TABLE"
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    override fun getColumns(schema: String, table: String): List<ColumnInfo> {
+        val conn = requireConnection()
+        val sql = "CALL db.schema.nodeTypeProperties()"
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(sql).use { rs ->
+                return buildList {
+                    while (rs.next()) {
+                        val nodeLabels = rs.getString("nodeLabels") ?: ""
+                        // nodeLabels is typically like ["Label"]
+                        if (nodeLabels.contains(table)) {
+                            val propertyName = rs.getString("propertyName") ?: continue
+                            val propertyTypes = rs.getString("propertyTypes") ?: "Unknown"
+                            val mandatory = try {
+                                !rs.getBoolean("mandatory")
+                            } catch (_: Exception) {
+                                true
+                            }
+
+                            add(ColumnInfo(
+                                name = propertyName,
+                                data_type = propertyTypes,
+                                is_nullable = mandatory,
+                                column_default = null,
+                                is_primary_key = false,
+                                extra = null,
+                                comment = null
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun listIndexes(schema: String, table: String): List<IndexInfo> {
+        val conn = requireConnection()
+        val sql = "SHOW INDEXES"
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(sql).use { rs ->
+                return buildList {
+                    while (rs.next()) {
+                        val labelsOrTypes = try { rs.getString("labelsOrTypes") ?: "" } catch (_: Exception) { "" }
+                        if (labelsOrTypes.contains(table)) {
+                            val properties = try { rs.getString("properties") ?: "" } catch (_: Exception) { "" }
+                            val columns = properties.removeSurrounding("[", "]")
+                                .split(",")
+                                .map { it.trim().removeSurrounding("\"") }
+                                .filter { it.isNotBlank() }
+                            val uniqueness = try { rs.getString("uniqueness") ?: "" } catch (_: Exception) { "" }
+                            add(IndexInfo(
+                                name = try { rs.getString("name") ?: "" } catch (_: Exception) { "" },
+                                columns = columns,
+                                is_unique = uniqueness.uppercase() == "UNIQUE",
+                                is_primary = false,
+                                filter = null,
+                                index_type = try { rs.getString("type") } catch (_: Exception) { null }
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun listForeignKeys(schema: String, table: String): List<ForeignKeyInfo> {
+        // Graph DB has relationships, not foreign keys
+        return emptyList()
+    }
+
+    override fun listTriggers(schema: String, table: String): List<TriggerInfo> {
+        return emptyList()
+    }
+
+    override fun executeQuery(sql: String, schema: String?): QueryResult {
+        val conn = requireConnection()
+        val trimmedSql = sql.trim().trimEnd(';')
+        val upperSql = trimmedSql.uppercase().trimStart()
+
+        // Translate transaction control to JDBC calls
+        if (upperSql == "BEGIN" || upperSql == "BEGIN TRANSACTION") {
+            val start = System.currentTimeMillis()
+            conn.autoCommit = false
+            return QueryResult(emptyList(), emptyList(), 0, System.currentTimeMillis() - start)
+        }
+        if (upperSql == "COMMIT") {
+            val start = System.currentTimeMillis()
+            conn.commit()
+            conn.autoCommit = true
+            return QueryResult(emptyList(), emptyList(), 0, System.currentTimeMillis() - start)
+        }
+        if (upperSql == "ROLLBACK") {
+            val start = System.currentTimeMillis()
+            conn.rollback()
+            conn.autoCommit = true
+            return QueryResult(emptyList(), emptyList(), 0, System.currentTimeMillis() - start)
+        }
+
+        val startTime = System.currentTimeMillis()
+        // Neo4j uses Cypher — queries that return data typically start with MATCH/RETURN/CALL/WITH/SHOW
+        val isQuery = QUERY_PREFIXES.any { upperSql.startsWith(it) }
+
+        if (isQuery) {
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(trimmedSql).use { rs ->
+                    val meta = rs.metaData
+                    val colCount = meta.columnCount
+                    val columns = (1..colCount).map { meta.getColumnLabel(it) }
+                    val rows = mutableListOf<List<Any?>>()
+                    while (rs.next() && rows.size < MAX_ROWS) {
+                        val row = (1..colCount).map { i ->
+                            val value = rs.getObject(i)
+                            if (rs.wasNull()) null else value?.toString()
+                        }
+                        rows.add(row)
+                    }
+                    val elapsed = System.currentTimeMillis() - startTime
+                    return QueryResult(
+                        columns = columns,
+                        rows = rows,
+                        affected_rows = 0,
+                        execution_time_ms = elapsed,
+                        truncated = rows.size >= MAX_ROWS
+                    )
+                }
+            }
+        } else {
+            conn.createStatement().use { stmt ->
+                val affected = stmt.executeUpdate(trimmedSql)
+                val elapsed = System.currentTimeMillis() - startTime
+                return QueryResult(
+                    columns = emptyList(),
+                    rows = emptyList(),
+                    affected_rows = affected.toLong(),
+                    execution_time_ms = elapsed,
+                    truncated = false
+                )
+            }
+        }
+    }
+
+    override fun disconnect() {
+        connection?.close()
+        connection = null
+    }
+
+    private fun requireConnection(): Connection {
+        return connection ?: throw IllegalStateException("Not connected")
+    }
+}
+
+fun main() {
+    JsonRpcServer(Neo4jAgent()).run()
+}
