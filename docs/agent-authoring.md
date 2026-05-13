@@ -212,21 +212,19 @@ private fun createH2Agent(databaseName: String): DatabaseAgent {
 
 `JdbcExecutionBehaviorTest` verifies non-`SELECT` result set execution, max-row truncation boundaries, and transaction control statements. `JdbcMetadataBehaviorTest` verifies stable metadata ordering. Agents with limited local test infrastructure can adopt the execution contract first and add the metadata contract later.
 
-For agents that need unavailable commercial or external drivers, use `test-support`:
+For agents that need unavailable commercial or external drivers, use the fake execution contract:
 
 ```kotlin
-@Test
-fun `executeQuery uses Statement execute`() {
-    val agent = ExampleAgent()
-    setPrivateConnection(agent, JdbcAgentFake.connection())
+class ExampleAgentTest : JdbcFakeExecutionBehaviorTest() {
+    override fun createAgent(): DatabaseAgent {
+        return ExampleAgent()
+    }
 
-    agent.executeQuery("SHOW TABLES", null)
-
-    assertEquals(listOf("execute"), JdbcAgentFake.calls)
+    override fun resultSetSql(): String = "SHOW TABLES"
 }
 ```
 
-Use `testImplementation(project(":test-support"))` when the test needs `JdbcAgentFake`.
+`JdbcFakeExecutionBehaviorTest` injects a fake JDBC connection and verifies that `executeQuery` uses `Statement.execute`, reads the returned `ResultSet`, and does not fall back to `executeQuery` or `executeUpdate`. Use `testImplementation(project(":test-support"))` for this contract.
 
 ## Review Checklist
 

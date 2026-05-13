@@ -1,20 +1,12 @@
 package com.dbx.agent.bigquery
 
-import com.dbx.agent.test.JdbcAgentFake
-import com.dbx.agent.test.setPrivateConnection
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import com.dbx.agent.DatabaseAgent
+import com.dbx.agent.test.JdbcFakeExecutionBehaviorTest
 
-class BigQueryAgentTest {
-    @Test
-    fun `executes non select statements that return result sets`() {
-        val agent = BigQueryAgent()
-        setPrivateConnection(agent, JdbcAgentFake.connection())
-
-        val result = agent.executeQuery("CALL dataset.proc()", null)
-
-        assertEquals(listOf("VALUE"), result.columns)
-        assertEquals(listOf(listOf("row-value")), result.rows)
-        assertEquals(listOf("execute"), JdbcAgentFake.calls)
+class BigQueryAgentTest : JdbcFakeExecutionBehaviorTest() {
+    override fun createAgent(): DatabaseAgent {
+        return BigQueryAgent()
     }
+
+    override fun resultSetSql(): String = "CALL dataset.proc()"
 }

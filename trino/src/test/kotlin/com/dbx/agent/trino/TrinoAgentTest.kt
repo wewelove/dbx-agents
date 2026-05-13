@@ -1,20 +1,12 @@
 package com.dbx.agent.trino
 
-import com.dbx.agent.test.JdbcAgentFake
-import com.dbx.agent.test.setPrivateConnection
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import com.dbx.agent.DatabaseAgent
+import com.dbx.agent.test.JdbcFakeExecutionBehaviorTest
 
-class TrinoAgentTest {
-    @Test
-    fun `executes non select statements that return result sets`() {
-        val agent = TrinoAgent()
-        setPrivateConnection(agent, JdbcAgentFake.connection())
-
-        val result = agent.executeQuery("CALL system.runtime.nodes()", null)
-
-        assertEquals(listOf("VALUE"), result.columns)
-        assertEquals(listOf(listOf("row-value")), result.rows)
-        assertEquals(listOf("execute"), JdbcAgentFake.calls)
+class TrinoAgentTest : JdbcFakeExecutionBehaviorTest() {
+    override fun createAgent(): DatabaseAgent {
+        return TrinoAgent()
     }
+
+    override fun resultSetSql(): String = "CALL system.runtime.nodes()"
 }
