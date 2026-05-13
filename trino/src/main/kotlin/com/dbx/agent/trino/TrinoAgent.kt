@@ -2,8 +2,8 @@ package com.dbx.agent.trino
 
 import com.dbx.agent.*
 import java.sql.Connection
+import java.sql.DatabaseMetaData
 import java.sql.DriverManager
-import java.sql.ResultSet
 import java.sql.Types
 
 class TrinoAgent : DatabaseAgent {
@@ -83,36 +83,12 @@ class TrinoAgent : DatabaseAgent {
 
     override fun getColumns(schema: String, table: String): List<ColumnInfo> {
         val conn = requireConnection()
-        conn.prepareStatement(
-            """
-            SELECT column_name, data_type, is_nullable, column_default,
-                   numeric_precision, numeric_scale, character_maximum_length
-            FROM information_schema.columns
-            WHERE table_schema = ? AND table_name = ?
-            ORDER BY ordinal_position
-            """.trimIndent()
-        ).use { stmt ->
-            stmt.setString(1, schema)
-            stmt.setString(2, table)
-            stmt.executeQuery().use { rs ->
-                return buildList {
-                    while (rs.next()) {
-                        add(ColumnInfo(
-                            name = rs.getString("column_name"),
-                            data_type = rs.getString("data_type"),
-                            is_nullable = rs.getString("is_nullable") == "YES",
-                            column_default = rs.getString("column_default"),
-                            is_primary_key = false, // Trino does not expose PK info in information_schema
-                            extra = null,
-                            comment = null,
-                            numeric_precision = rs.getObject("numeric_precision")?.let { (it as Number).toInt() },
-                            numeric_scale = rs.getObject("numeric_scale")?.let { (it as Number).toInt() },
-                            character_maximum_length = rs.getObject("character_maximum_length")?.let { (it as Number).toInt() }
-                        ))
-                    }
-                }
-            }
+        val metadataColumns = try {
+            getColumnsFromMetadata(conn, schema, table)
+        } catch (_: Exception) {
+            emptyList()
         }
+        return metadataColumns.ifEmpty { getColumnsFromDescribe(conn, schema, table) }
     }
 
     override fun listIndexes(schema: String, table: String): List<IndexInfo> {
@@ -216,6 +192,99 @@ class TrinoAgent : DatabaseAgent {
 
     private fun requireConnection(): Connection {
         return connection ?: throw IllegalStateException("Not connected")
+    }
+
+    private fun getColumnsFromMetadata(conn: Connection, schema: String, table: String): List<ColumnInfo> {
+        val catalog = conn.catalog?.takeIf { it.isNotBlank() }
+        conn.metaData.getColumns(catalog, schema, table, null).use { rs ->
+            return buildList {
+                while (rs.next()) {
+                    val sqlType = rs.getInt("DATA_TYPE")
+                    val size = rs.getObject("COLUMN_SIZE")?.let { (it as Number).toInt() }
+                    val scale = rs.getObject("DECIMAL_DIGITS")?.let { (it as Number).toInt() }
+                    add(ColumnInfo(
+                        name = rs.getString("COLUMN_NAME"),
+                        data_type = rs.getString("TYPE_NAME") ?: "",
+                        is_nullable = rs.getInt("NULLABLE") != DatabaseMetaData.columnNoNulls,
+                        column_default = rs.getString("COLUMN_DEF"),
+                        is_primary_key = false, // Trino does not expose PK info in JDBC metadata
+                        extra = null,
+                        comment = rs.getString("REMARKS"),
+                        numeric_precision = if (isNumericType(sqlType)) size else null,
+                        numeric_scale = if (isNumericType(sqlType)) scale else null,
+                        character_maximum_length = if (isCharacterType(sqlType)) size else null
+                    ))
+                }
+            }
+        }
+    }
+
+    private fun getColumnsFromDescribe(conn: Connection, schema: String, table: String): List<ColumnInfo> {
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery("DESCRIBE ${quoteIdentifier(schema)}.${quoteIdentifier(table)}").use { rs ->
+                return buildList {
+                    while (rs.next()) {
+                        val dataType = rs.getString(2)
+                        val extra = rs.getString(3)
+                        add(ColumnInfo(
+                            name = rs.getString(1),
+                            data_type = dataType,
+                            is_nullable = !extra.orEmpty().contains("not null", ignoreCase = true),
+                            column_default = null,
+                            is_primary_key = false,
+                            extra = extra,
+                            comment = rs.getString(4),
+                            numeric_precision = parseNumericPrecision(dataType),
+                            numeric_scale = parseNumericScale(dataType),
+                            character_maximum_length = parseCharacterMaximumLength(dataType)
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun quoteIdentifier(identifier: String): String {
+        return "\"${identifier.replace("\"", "\"\"")}\""
+    }
+
+    private fun isNumericType(sqlType: Int): Boolean {
+        return when (sqlType) {
+            Types.BIGINT,
+            Types.DECIMAL,
+            Types.DOUBLE,
+            Types.FLOAT,
+            Types.INTEGER,
+            Types.NUMERIC,
+            Types.REAL,
+            Types.SMALLINT,
+            Types.TINYINT -> true
+            else -> false
+        }
+    }
+
+    private fun isCharacterType(sqlType: Int): Boolean {
+        return when (sqlType) {
+            Types.CHAR,
+            Types.LONGNVARCHAR,
+            Types.LONGVARCHAR,
+            Types.NCHAR,
+            Types.NVARCHAR,
+            Types.VARCHAR -> true
+            else -> false
+        }
+    }
+
+    private fun parseNumericPrecision(dataType: String): Int? {
+        return Regex("(?i)^(decimal|numeric)\\((\\d+)(?:,\\s*\\d+)?\\)").find(dataType)?.groupValues?.get(2)?.toIntOrNull()
+    }
+
+    private fun parseNumericScale(dataType: String): Int? {
+        return Regex("(?i)^(decimal|numeric)\\(\\d+,\\s*(\\d+)\\)").find(dataType)?.groupValues?.get(1)?.toIntOrNull()
+    }
+
+    private fun parseCharacterMaximumLength(dataType: String): Int? {
+        return Regex("(?i)^(char|varchar)\\((\\d+)\\)").find(dataType)?.groupValues?.get(2)?.toIntOrNull()
     }
 }
 
