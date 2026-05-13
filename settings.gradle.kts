@@ -1,2 +1,2 @@
 rootProject.name = "dbx-agents"
-include("common", "dameng", "kingbase", "vastbase", "goldendb")
+include("common", "dameng", "kingbase", "vastbase", "goldendb", "oracle")
