@@ -361,27 +361,50 @@ jobs:
           body_path: RELEASE_NOTES.md
 
       - name: Upload to R2
-        run: |
-          # Upload agent-registry.json
-          aws s3 cp release/agent-registry.json \
-            "s3://${{ secrets.R2_BUCKET_NAME }}/agents/agent-registry.json" \
-            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-
-          # Upload JRE archives
-          for f in release/dbx-jre-*.tar.gz; do
-            [ ! -f "$f" ] && continue
-            aws s3 cp "$f" \
-              "s3://${{ secrets.R2_BUCKET_NAME }}/agents/jre/$(basename $f)" \
-              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          done
-
-          # Upload driver JARs
-          for f in release/dbx-agent-*.jar; do
-            [ ! -f "$f" ] && continue
-            aws s3 cp "$f" \
-              "s3://${{ secrets.R2_BUCKET_NAME }}/agents/drivers/$(basename $f)" \
-              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
-          done
         env:
+          MODULE_VERSIONS: ${{ needs.bump-versions.outputs.versions }}
+          PREV_VERSIONS: ${{ needs.bump-versions.outputs.prev_versions }}
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          R2_BUCKET: "s3://${{ secrets.R2_BUCKET_NAME }}"
+        run: |
+          # Always upload agent-registry.json
+          aws s3 cp release/agent-registry.json \
+            "$R2_BUCKET/agents/agent-registry.json" \
+            --endpoint-url "$R2_ENDPOINT"
+          echo "Uploaded agent-registry.json"
+
+          # Upload only changed driver JARs
+          UPLOADED=0
+          SKIPPED=0
+          for f in release/dbx-agent-*.jar; do
+            [ ! -f "$f" ] && continue
+            name=$(basename "$f" .jar | sed 's/dbx-agent-//')
+            old_ver=$(echo "$PREV_VERSIONS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$name',''))" 2>/dev/null)
+            new_ver=$(echo "$MODULE_VERSIONS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$name',''))" 2>/dev/null)
+            if [ "$old_ver" = "$new_ver" ] && [ -n "$old_ver" ]; then
+              echo "Skip $(basename $f) (unchanged $old_ver)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+            aws s3 cp "$f" \
+              "$R2_BUCKET/agents/drivers/$(basename $f)" \
+              --endpoint-url "$R2_ENDPOINT"
+            echo "Uploaded $(basename $f) ($old_ver → $new_ver)"
+            UPLOADED=$((UPLOADED + 1))
+          done
+          echo "Drivers: $UPLOADED uploaded, $SKIPPED skipped"
+
+          # Upload JRE only if not already present on R2
+          for f in release/dbx-jre-*.tar.gz; do
+            [ ! -f "$f" ] && continue
+            key="agents/jre/$(basename $f)"
+            if aws s3api head-object --bucket "${{ secrets.R2_BUCKET_NAME }}" --key "$key" \
+                --endpoint-url "$R2_ENDPOINT" >/dev/null 2>&1; then
+              echo "Skip $(basename $f) (already on R2)"
+            else
+              aws s3 cp "$f" "$R2_BUCKET/$key" --endpoint-url "$R2_ENDPOINT"
+              echo "Uploaded $(basename $f)"
+            fi
+          done
