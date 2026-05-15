@@ -143,6 +143,20 @@ class Oracle10gAgent : DatabaseAgent {
         }
     }
 
+    override fun getTableDdl(schema: String, table: String): String {
+        val conn = requireConnection()
+        val sql = "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL"
+        conn.prepareStatement(sql).use { stmt ->
+            stmt.setString(1, "TABLE")
+            stmt.setString(2, table)
+            stmt.setString(3, schema)
+            stmt.executeQuery().use { rs ->
+                if (rs.next()) return rs.getString(1) ?: ""
+            }
+        }
+        throw IllegalArgumentException("Table not found: $schema.$table")
+    }
+
     override fun getColumns(schema: String, table: String): List<ColumnInfo> {
         val conn = requireConnection()
         val sql = """
