@@ -78,6 +78,10 @@ class JsonRpcServer(private val agent: DatabaseAgent) {
                 params.get("name").asString,
                 params.get("object_type").asString
             )
+            "get_table_ddl" -> agent.getTableDdl(
+                params.get("schema").asString,
+                params.get("table").asString
+            )
             "get_columns" -> agent.getColumns(
                 params.get("schema").asString,
                 params.get("table").asString

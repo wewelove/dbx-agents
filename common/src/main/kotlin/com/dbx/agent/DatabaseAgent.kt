@@ -15,6 +15,15 @@ interface DatabaseAgent {
     fun getObjectSource(schema: String, name: String, objectType: String): ObjectSource {
         throw UnsupportedOperationException("Object source is not supported")
     }
+    fun getTableDdl(schema: String, table: String): String {
+        return buildTableDdl(
+            schema = schema,
+            table = table,
+            columns = getColumns(schema, table),
+            indexes = runCatching { listIndexes(schema, table) }.getOrDefault(emptyList()),
+            foreignKeys = runCatching { listForeignKeys(schema, table) }.getOrDefault(emptyList()),
+        )
+    }
     fun listIndexes(schema: String, table: String): List<IndexInfo>
     fun listForeignKeys(schema: String, table: String): List<ForeignKeyInfo>
     fun listTriggers(schema: String, table: String): List<TriggerInfo>
@@ -46,4 +55,76 @@ interface DatabaseAgent {
         }
     }
     fun setSchemaSQL(schema: String): String = "SET SCHEMA \"$schema\""
+}
+
+fun buildTableDdl(
+    schema: String,
+    table: String,
+    columns: List<ColumnInfo>,
+    indexes: List<IndexInfo>,
+    foreignKeys: List<ForeignKeyInfo>,
+): String {
+    val tableRef = "${quoteIdent(schema)}.${quoteIdent(table)}"
+    val columnLines = columns.map { column ->
+        buildString {
+            append("  ")
+            append(quoteIdent(column.name))
+            append(" ")
+            append(columnTypeSql(column))
+            if (!column.is_nullable) append(" NOT NULL")
+            if (!column.column_default.isNullOrBlank()) append(" DEFAULT ${column.column_default}")
+        }
+    }.toMutableList()
+
+    val primaryKeys = columns.filter { it.is_primary_key }.map { quoteIdent(it.name) }
+    if (primaryKeys.isNotEmpty()) {
+        columnLines.add("  PRIMARY KEY (${primaryKeys.joinToString(", ")})")
+    }
+
+    foreignKeys.forEach { fk ->
+        columnLines.add(
+            "  CONSTRAINT ${quoteIdent(fk.name)} FOREIGN KEY (${quoteIdent(fk.column)}) " +
+                "REFERENCES ${quoteIdent(fk.ref_table)}(${quoteIdent(fk.ref_column)})"
+        )
+    }
+
+    val ddl = StringBuilder()
+    ddl.append("CREATE TABLE ")
+    ddl.append(tableRef)
+    ddl.append(" (\n")
+    ddl.append(columnLines.joinToString(",\n"))
+    ddl.append("\n);\n")
+
+    indexes.filterNot { it.is_primary }.forEach { index ->
+        val unique = if (index.is_unique) "UNIQUE " else ""
+        val using = index.index_type?.takeIf { it.isNotBlank() }?.let { " USING $it" } ?: ""
+        val cols = index.columns.joinToString(", ") { quoteIdent(it) }
+        val filter = index.filter?.takeIf { it.isNotBlank() }?.let { " WHERE $it" } ?: ""
+        ddl.append("\nCREATE ${unique}INDEX ${quoteIdent(index.name)} ON $tableRef$using ($cols)$filter;")
+        index.comment?.takeIf { it.isNotBlank() }?.let { comment ->
+            ddl.append("\nCOMMENT ON INDEX ${quoteIdent(schema)}.${quoteIdent(index.name)} IS '${comment.replace("'", "''")}';")
+        }
+    }
+
+    return ddl.toString()
+}
+
+private fun quoteIdent(identifier: String): String = "\"${identifier.replace("\"", "\"\"")}\""
+
+private fun columnTypeSql(column: ColumnInfo): String {
+    val type = column.data_type
+    val normalized = type.lowercase()
+    if ((normalized == "character varying" || normalized == "varchar" || normalized == "char" || normalized == "character") &&
+        column.character_maximum_length != null
+    ) {
+        return "$type(${column.character_maximum_length})"
+    }
+    if ((normalized == "numeric" || normalized == "decimal") && column.numeric_precision != null) {
+        return if (column.numeric_scale != null) {
+            "$type(${column.numeric_precision}, ${column.numeric_scale})"
+        } else {
+            "$type(${column.numeric_precision})"
+        }
+    }
+    return type
 }

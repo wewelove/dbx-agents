@@ -34,4 +34,21 @@ abstract class JdbcMetadataBehaviorTest : JdbcConnectedAgentTest() {
             assertEquals(expectedColumns, columnNames)
         }
     }
+
+    @Test
+    fun `builds table ddl from metadata`() {
+        withAgent("dbx-agent-ddl") { agent ->
+            metadataFixtureSql().forEach { sql ->
+                agent.executeQuery(sql, metadataSchema())
+            }
+
+            val ddl = agent.getTableDdl(metadataSchema(), metadataColumnsTable())
+
+            expectedColumnsInOrder().forEach { column ->
+                kotlin.test.assertTrue(ddl.contains("\"$column\""), "DDL should include column $column: $ddl")
+            }
+            kotlin.test.assertTrue(ddl.contains("CREATE TABLE"), "DDL should include CREATE TABLE: $ddl")
+            kotlin.test.assertTrue(ddl.contains(metadataColumnsTable()), "DDL should include table name: $ddl")
+        }
+    }
 }
