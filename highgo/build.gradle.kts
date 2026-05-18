@@ -20,7 +20,7 @@ tasks.shadowJar {
     archiveBaseName.set("dbx-agent-highgo")
     archiveClassifier.set("")
     manifest {
-        attributes("Agent-Label" to "瀚高 HighGo", "Main-Class" to "com.dbx.agent.highgo.HighgoAgentKt")
+        attributes("Agent-Label" to "瀚高 HighGo", "Main-Class" to "com.dbx.agent.highgo.HighgoAgent")
     }
 }
 
