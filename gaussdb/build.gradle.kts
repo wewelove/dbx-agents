@@ -20,7 +20,7 @@ tasks.shadowJar {
     archiveBaseName.set("dbx-agent-gaussdb")
     archiveClassifier.set("")
     manifest {
-        attributes("Agent-Label" to "GaussDB", "Main-Class" to "com.dbx.agent.gaussdb.GaussdbAgentKt")
+        attributes("Agent-Label" to "GaussDB", "Main-Class" to "com.dbx.agent.gaussdb.GaussdbAgent")
     }
 }
 

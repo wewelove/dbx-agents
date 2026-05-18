@@ -22,7 +22,7 @@ tasks.shadowJar {
         attributes(
             "Agent-Label" to "SunDB",
             "Agent-External-Driver" to "true",
-            "Main-Class" to "com.dbx.agent.sundb.SundbAgentKt"
+            "Main-Class" to "com.dbx.agent.sundb.SundbAgent"
         )
     }
 }

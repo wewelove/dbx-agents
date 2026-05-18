@@ -20,7 +20,7 @@ tasks.shadowJar {
     archiveBaseName.set("dbx-agent-goldendb")
     archiveClassifier.set("")
     manifest {
-        attributes("Agent-Label" to "GoldenDB", "Main-Class" to "com.dbx.agent.goldendb.GoldendbAgentKt")
+        attributes("Agent-Label" to "GoldenDB", "Main-Class" to "com.dbx.agent.goldendb.GoldendbAgent")
     }
 }
 

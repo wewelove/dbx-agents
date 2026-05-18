@@ -16,7 +16,7 @@ tasks.shadowJar {
     archiveBaseName.set("dbx-agent-mongodb")
     archiveClassifier.set("")
     manifest {
-        attributes("Agent-Label" to "MongoDB (Legacy)", "Main-Class" to "com.dbx.agent.mongodb.MongoAgentKt")
+        attributes("Agent-Label" to "MongoDB (Legacy)", "Main-Class" to "com.dbx.agent.mongodb.MongoAgent")
     }
 }
 
