@@ -319,6 +319,9 @@ jobs:
           echo "=== agent-registry.json ==="
           cat release/agent-registry.json
 
+      - name: Build offline ZIP bundles
+        run: bash scripts/build_offline_zip.sh release
+
       - name: Generate release notes
         env:
           MODULE_VERSIONS: ${{ needs.bump-versions.outputs.versions }}
