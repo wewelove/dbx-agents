@@ -200,10 +200,21 @@ public final class DamengAgent extends BaseDatabaseAgent {
 
             List<ColumnInfo> result = new ArrayList<>();
             String colSql = """
-                SELECT COLUMN_NAME, DATA_TYPE, NULLABLE, DATA_PRECISION, DATA_SCALE, DATA_LENGTH, CHAR_LENGTH
-                FROM ALL_TAB_COLUMNS
-                WHERE OWNER = ? AND TABLE_NAME = ?
-                ORDER BY COLUMN_ID
+                SELECT c.COLUMN_NAME,
+                    c.DATA_TYPE,
+                    c.NULLABLE,
+                    c.DATA_PRECISION,
+                    c.DATA_SCALE,
+                    c.DATA_LENGTH,
+                    c.CHAR_LENGTH,
+                    cc.COMMENTS
+                FROM ALL_TAB_COLUMNS c
+                LEFT JOIN ALL_COL_COMMENTS cc
+                    ON cc.OWNER = c.OWNER
+                    AND cc.TABLE_NAME = c.TABLE_NAME
+                    AND cc.COLUMN_NAME = c.COLUMN_NAME
+                WHERE c.OWNER = ? AND c.TABLE_NAME = ?
+                ORDER BY c.COLUMN_ID
                 """.stripIndent().trim();
             try (PreparedStatement stmt = requireConnected().prepareStatement(colSql)) {
                 stmt.setString(1, schema);
@@ -225,7 +236,7 @@ public final class DamengAgent extends BaseDatabaseAgent {
                             null,
                             pkColumns.contains(name),
                             null,
-                            null,
+                            rs.getString("COMMENTS"),
                             numPrec,
                             numScale,
                             charLen
