@@ -200,8 +200,17 @@ public final class BigQueryAgent extends BaseDatabaseAgent {
         });
     }
 
-    private static String buildUrl(ConnectParams params) {
-        return "jdbc:bigquery://" + params.getHost() + ":" + params.getPort() + ";ProjectId=" + params.getDatabase();
+    static String buildUrl(ConnectParams params) {
+        String url = "jdbc:bigquery://" + params.getHost() + ":" + params.getPort() + ";ProjectId=" + params.getDatabase();
+        String extraParams = trimSemicolons(params.getUrl_params());
+        return extraParams.isBlank() ? url : url + ";" + extraParams;
+    }
+
+    private static String trimSemicolons(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().replaceAll("^;+", "").replaceAll(";+\\s*$", "");
     }
 
     private static String normalizeTableType(String type) {

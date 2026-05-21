@@ -1,6 +1,7 @@
 package com.dbx.agent.bigquery;
 
 import com.dbx.agent.test.TestSupport;
+import com.dbx.agent.ConnectParams;
 import com.dbx.agent.test.JdbcAgentFake;
 import com.dbx.agent.test.JdbcMetadataSqlFake;
 import java.sql.Connection;
@@ -24,6 +25,24 @@ class BigQueryAgentMetadataTest {
         Assertions.assertTrue(
             JdbcMetadataSqlFake.statements.stream()
                 .anyMatch(statement -> statement.contains("FROM `bad``schema`.INFORMATION_SCHEMA.COLUMNS"))
+        );
+    }
+
+    @Test
+    void buildUrlAppendsAuthenticationUrlParams() {
+        ConnectParams params = new ConnectParams(
+            "https://www.googleapis.com/bigquery/v2",
+            443,
+            "demo-project",
+            "",
+            "",
+            "OAuthType=0;OAuthServiceAcctEmail=svc@demo.iam.gserviceaccount.com;OAuthPvtKeyPath=C:\\keys\\demo.json",
+            ""
+        );
+
+        Assertions.assertEquals(
+            "jdbc:bigquery://https://www.googleapis.com/bigquery/v2:443;ProjectId=demo-project;OAuthType=0;OAuthServiceAcctEmail=svc@demo.iam.gserviceaccount.com;OAuthPvtKeyPath=C:\\keys\\demo.json",
+            BigQueryAgent.buildUrl(params)
         );
     }
 }
