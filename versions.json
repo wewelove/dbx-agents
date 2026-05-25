@@ -17,7 +17,6 @@
   "kylin": "0.1.9",
   "neo4j": "0.1.9",
   "oceanbase-oracle": "0.1.4",
-  "opengauss": "0.1.4",
   "oracle": "0.1.11",
   "oracle-10g": "0.1.11",
   "snowflake": "0.1.9",

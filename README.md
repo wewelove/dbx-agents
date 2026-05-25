@@ -19,7 +19,6 @@ Each agent runs as a standalone JVM process and communicates with DBX via stdin/
 | vertica | Vertica | Vertica JDBC |
 | firebird | Firebird | Jaybird JDBC |
 | exasol | Exasol | Exasol JDBC |
-| opengauss | openGauss | openGauss JDBC |
 | oceanbase-oracle | OceanBase Oracle Mode | OceanBase JDBC |
 | gbase | GBase | External GBase JDBC |
 | oracle | Oracle (11g+) | ojdbc11 |
