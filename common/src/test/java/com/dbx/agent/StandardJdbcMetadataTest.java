@@ -43,6 +43,21 @@ class StandardJdbcMetadataTest {
     }
 
     @Test
+    void listsSchemasWhenConnectionGetSchemaIsUnsupported() {
+        Connection conn = connection(
+            rows(row("TABLE_SCHEM", "APP"), row("TABLE_SCHEM", "PUBLIC")),
+            rows(),
+            rows(),
+            rows(),
+            rows(),
+            rows(),
+            true
+        );
+
+        assertEquals(Arrays.asList("APP", "PUBLIC"), StandardJdbcMetadata.INSTANCE.listSchemas(conn, profile));
+    }
+
+    @Test
     void listsTablesWithNormalizedTypesAndStableOrdering() {
         Connection conn = connection(
             rows(),
@@ -143,6 +158,18 @@ class StandardJdbcMetadataTest {
         ResultSet indexes,
         ResultSet foreignKeys
     ) {
+        return connection(schemas, tables, primaryKeys, columns, indexes, foreignKeys, false);
+    }
+
+    private static Connection connection(
+        ResultSet schemas,
+        ResultSet tables,
+        ResultSet primaryKeys,
+        ResultSet columns,
+        ResultSet indexes,
+        ResultSet foreignKeys,
+        boolean unsupportedGetSchema
+    ) {
         DatabaseMetaData meta = proxy(DatabaseMetaData.class, new MethodHandler() {
             @Override
             public Object handle(Method method, Object[] args) {
@@ -178,6 +205,9 @@ class StandardJdbcMetadataTest {
                     return meta;
                 }
                 if ("getSchema".equals(method.getName())) {
+                    if (unsupportedGetSchema) {
+                        throw new RuntimeException("Unimplemented method: getSchema()");
+                    }
                     return null;
                 }
                 if ("getCatalog".equals(method.getName())) {

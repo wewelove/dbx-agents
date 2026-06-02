@@ -58,7 +58,10 @@ public final class StandardJdbcMetadata {
                     }
                 }
             }
-            addNonBlank(names, conn.getSchema());
+            try {
+                addNonBlank(names, conn.getSchema());
+            } catch (Exception ignored) {
+            }
 
             List<String> result = new ArrayList<>();
             for (String name : names) {
