@@ -1,0 +1,13 @@
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+tasks.named('shadowJar') {
+    manifest {
+        attributes(
+            'Agent-Label': 'GBase 8s',
+            'Agent-External-Driver': 'true',
+            'Main-Class': 'com.dbx.agent.gbase8s.Gbase8sAgent'
+        )
+    }
+}

@@ -21,6 +21,7 @@ Each agent runs as a standalone JVM process and communicates with DBX via stdin/
 | exasol | Exasol | Exasol JDBC |
 | oceanbase-oracle | OceanBase Oracle Mode | OceanBase JDBC |
 | gbase | GBase | External GBase JDBC |
+| gbase8s | GBase 8s | External GBase 8s JDBC |
 | oracle | Oracle 19c+ | ojdbc17 |
 | oracle-legacy | Oracle 11g/12c/18c/19c | ojdbc8 |
 | oracle-10g | Oracle 10g | ojdbc6 (JRE 8) |
