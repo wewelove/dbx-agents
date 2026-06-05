@@ -20,7 +20,8 @@ class ConfiguredJdbcAgentTest {
                 "",
                 "",
                 "ssl=false",
-                ""
+                "",
+                false
             )
         );
 
@@ -42,7 +43,8 @@ class ConfiguredJdbcAgentTest {
                 "",
                 "",
                 "",
-                "jdbc:example://server:4321/prod"
+                "jdbc:example://server:4321/prod",
+                false
             )
         );
 
@@ -65,7 +67,8 @@ class ConfiguredJdbcAgentTest {
                 "",
                 "",
                 "",
-                ""
+                "",
+                false
             )
         );
 

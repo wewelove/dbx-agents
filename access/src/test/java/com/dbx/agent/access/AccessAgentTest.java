@@ -19,7 +19,7 @@ class AccessAgentTest extends JdbcConnectedAgentTest {
     protected DatabaseAgent createConnectedAgent(String databaseName) {
         Path file = tempDir.resolve(databaseName + ".accdb");
         AccessAgent agent = new AccessAgent();
-        agent.connect(new ConnectParams("", 0, file.toString(), "", "", "", ""));
+        agent.connect(new ConnectParams("", 0, file.toString(), "", "", "", "", false));
         return agent;
     }
 
@@ -55,7 +55,7 @@ class AccessAgentTest extends JdbcConnectedAgentTest {
         withAgent("schemas", agent -> {
             Assertions.assertEquals(List.of(), agent.listSchemas());
             Assertions.assertFalse(agent.testConnection(
-                new ConnectParams("", 0, tempDir.resolve("missing.accdb").toString(), "", "", "", "")
+                new ConnectParams("", 0, tempDir.resolve("missing.accdb").toString(), "", "", "", "", false)
             ));
         });
     }

@@ -45,7 +45,8 @@ class Oracle10gAgentTest extends JdbcFakeExecutionBehaviorTest {
             "scott",
             "tiger",
             "",
-            "jdbc:oracle:thin:@oracle.example.com:1521:ORCL"
+            "jdbc:oracle:thin:@oracle.example.com:1521:ORCL",
+            false
         );
 
         Assertions.assertEquals("jdbc:oracle:thin:@oracle.example.com:1521:ORCL", Oracle10gAgent.buildUrl(params));

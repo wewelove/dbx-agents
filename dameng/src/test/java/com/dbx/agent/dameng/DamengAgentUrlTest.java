@@ -9,14 +9,14 @@ import java.lang.reflect.Method;
 class DamengAgentUrlTest {
     @Test
     void omitsDatabasePathWhenDatabaseIsBlank() throws Exception {
-        String url = invokeBuildUrl(new ConnectParams("127.0.0.1", 5236, "", "SYSDBA", "pwd", "", ""));
+        String url = invokeBuildUrl(new ConnectParams("127.0.0.1", 5236, "", "SYSDBA", "pwd", "", "", false));
 
         Assertions.assertEquals("jdbc:dm://127.0.0.1:5236", url);
     }
 
     @Test
     void appendsDatabasePathWhenDatabaseIsProvided() throws Exception {
-        String url = invokeBuildUrl(new ConnectParams("127.0.0.1", 5236, "MAIN", "SYSDBA", "pwd", "", ""));
+        String url = invokeBuildUrl(new ConnectParams("127.0.0.1", 5236, "MAIN", "SYSDBA", "pwd", "", "", false));
 
         Assertions.assertEquals("jdbc:dm://127.0.0.1:5236/MAIN", url);
     }

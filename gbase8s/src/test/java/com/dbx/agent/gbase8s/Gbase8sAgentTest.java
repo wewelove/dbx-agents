@@ -24,7 +24,8 @@ class Gbase8sAgentTest {
                 "",
                 "",
                 "GBASEDBTSERVER=gbase01;CLIENT_LOCALE=zh_cn.utf8;DB_LOCALE=zh_cn.utf8",
-                ""
+                "",
+                false
             )
         );
 
@@ -44,7 +45,8 @@ class Gbase8sAgentTest {
                 "",
                 "",
                 "",
-                ""
+                "",
+                false
             )
         );
 
@@ -64,7 +66,8 @@ class Gbase8sAgentTest {
                 "",
                 "",
                 "",
-                ""
+                "",
+                false
             )
         );
 
@@ -84,7 +87,8 @@ class Gbase8sAgentTest {
                 "",
                 "",
                 "",
-                "jdbc:gbasedbt-sqli://db.example.com:20013/app:GBASEDBTSERVER=gbase01"
+                "jdbc:gbasedbt-sqli://db.example.com:20013/app:GBASEDBTSERVER=gbase01",
+                false
             )
         );
 

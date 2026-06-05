@@ -37,7 +37,8 @@ class BigQueryAgentMetadataTest {
             "",
             "",
             "OAuthType=0;OAuthServiceAcctEmail=svc@demo.iam.gserviceaccount.com;OAuthPvtKeyPath=C:\\keys\\demo.json",
-            ""
+            "",
+            false
         );
 
         Assertions.assertEquals(

@@ -17,7 +17,8 @@ class InformixAgentTest {
                 "",
                 "",
                 "INFORMIXSERVER=informix;CLIENT_LOCALE=en_US.utf8;DB_LOCALE=en_US.utf8",
-                ""
+                "",
+                false
             )
         );
 
@@ -37,7 +38,8 @@ class InformixAgentTest {
                 "",
                 "",
                 "",
-                ""
+                "",
+                false
             )
         );
 
@@ -57,7 +59,8 @@ class InformixAgentTest {
                 "",
                 "",
                 "",
-                ""
+                "",
+                false
             )
         );
 
@@ -77,7 +80,8 @@ class InformixAgentTest {
                 "",
                 "",
                 "INFORMIXSERVER=informix",
-                ""
+                "",
+                false
             )
         );
 

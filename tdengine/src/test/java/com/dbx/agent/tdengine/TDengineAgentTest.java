@@ -29,7 +29,7 @@ class TDengineAgentMetadataTest {
     @Test
     void buildsWebsocketJdbcUrlWithDefaultPortAndDatabase() {
         String url = TDengineJdbcUrl.from(
-            new ConnectParams("127.0.0.1", 0, "meters", "root", "taosdata", "", "")
+            new ConnectParams("127.0.0.1", 0, "meters", "root", "taosdata", "", "", false)
         );
 
         Assertions.assertEquals("jdbc:TAOS-WS://127.0.0.1:6041/meters", url);
@@ -38,7 +38,7 @@ class TDengineAgentMetadataTest {
     @Test
     void preservesCustomWebsocketPortAndUrlParams() {
         String url = TDengineJdbcUrl.from(
-            new ConnectParams("td.local", 6042, "", "", "", "timezone=UTC&charset=UTF-8", "")
+            new ConnectParams("td.local", 6042, "", "", "", "timezone=UTC&charset=UTF-8", "", false)
         );
 
         Assertions.assertEquals("jdbc:TAOS-WS://td.local:6042/?timezone=UTC&charset=UTF-8", url);

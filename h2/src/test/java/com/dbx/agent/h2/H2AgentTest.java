@@ -85,7 +85,7 @@ final class H2AgentTestSupport {
 
     static DatabaseAgent createH2Agent(String databaseName) {
         H2Agent agent = new H2Agent();
-        agent.connect(new ConnectParams("", 0, "mem:" + databaseName + ";DB_CLOSE_DELAY=-1", "", "", "", ""));
+        agent.connect(new ConnectParams("", 0, "mem:" + databaseName + ";DB_CLOSE_DELAY=-1", "", "", "", "", false));
         return agent;
     }
 }

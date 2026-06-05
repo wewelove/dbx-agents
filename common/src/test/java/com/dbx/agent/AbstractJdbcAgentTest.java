@@ -31,7 +31,7 @@ class AbstractJdbcAgentTest {
 
         assertThrows(IllegalStateException.class, () -> agent.executeQuery("SELECT 1", null, new ExecuteQueryOptions()));
 
-        agent.connect(new ConnectParams("localhost", 0, "demo", "user", "secret", "", ""));
+        agent.connect(new ConnectParams("localhost", 0, "demo", "user", "secret", "", "", false));
 
         assertNotNull(agent.getConnection());
         assertEquals("demo", agent.database());

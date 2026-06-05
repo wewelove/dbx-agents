@@ -69,7 +69,7 @@ class CommonJavaCompatibilityTest {
 
     @Test
     void exposesJavaFriendlyDefaultsAndModels() {
-        ConnectParams params = new ConnectParams("localhost", 5432, "demo", "user", "secret", "ssl=false", "");
+        ConnectParams params = new ConnectParams("localhost", 5432, "demo", "user", "secret", "ssl=false", "", false);
         assertEquals("localhost", params.getHost());
         assertEquals("ssl=false", params.getUrl_params());
 
