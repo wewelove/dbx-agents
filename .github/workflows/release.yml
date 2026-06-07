@@ -34,8 +34,12 @@ jobs:
           CHANGED=false
 
           for dir in $(echo "$VERSIONS" | python3 -c "import sys,json; [print(k) for k in json.load(sys.stdin)]"); do
-            if [ -d "$dir" ] || [ "$dir" = "common" ]; then
-              CHECK_DIRS="$dir/"
+            if [ -d "drivers/$dir" ] || [ -d "$dir" ] || [ "$dir" = "common" ]; then
+              if [ -d "drivers/$dir" ]; then
+                CHECK_DIR="drivers/$dir"
+              else
+                CHECK_DIR="$dir"
+              fi
               # common changes affect all modules
               if git diff --quiet "$PREV_TAG"..HEAD -- common/ 2>/dev/null; then
                 COMMON_CHANGED=false
@@ -43,7 +47,7 @@ jobs:
                 COMMON_CHANGED=true
               fi
 
-              if git diff --quiet "$PREV_TAG"..HEAD -- "$dir/" 2>/dev/null && [ "$COMMON_CHANGED" = "false" ]; then
+              if git diff --quiet "$PREV_TAG"..HEAD -- "$CHECK_DIR/" 2>/dev/null && [ "$COMMON_CHANGED" = "false" ]; then
                 echo "  $dir: no changes"
               else
                 echo "  $dir: CHANGED"
@@ -94,7 +98,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: agent-jars
-          path: "*/build/libs/dbx-agent-*.jar"
+          path: "drivers/*/build/libs/dbx-agent-*.jar"
 
   build-jre:
     runs-on: ubuntu-latest
@@ -339,9 +343,14 @@ jobs:
             [ -z "$label" ] && label="$name"
 
             NOTES="${NOTES}### ${label} (${old_ver} → ${new_ver})"$'\n'
+            if [ -d "drivers/$name" ]; then
+              LOG_PATH="drivers/$name/"
+            else
+              LOG_PATH="$name/"
+            fi
             while IFS= read -r line; do
               [ -n "$line" ] && NOTES="${NOTES}- ${line}"$'\n'
-            done < <(git log --oneline "$PREV_TAG"..HEAD -- "$name/" | sed 's/^[0-9a-f]* //')
+            done < <(git log --oneline "$PREV_TAG"..HEAD -- "$LOG_PATH" | sed 's/^[0-9a-f]* //')
 
             # include common changes if any
             while IFS= read -r line; do

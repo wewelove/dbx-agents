@@ -166,7 +166,8 @@ The release workflow reads `Agent-External-Driver: true` and emits `external_dri
 
 When adding an agent named `exampledb`:
 
-- Add `include 'exampledb'` to `settings.gradle`.
+- Create the module under `drivers/exampledb`.
+- Add `exampledb` to `driverModules` in `settings.gradle`.
 - Add `"exampledb": "0.1.0"` to `versions.json`.
 - Set `Agent-Label` to the user-facing database name.
 - Set `Main-Class` to the Java agent class, usually `com.dbx.agent.exampledb.ExampledbAgent`.

@@ -32,6 +32,22 @@ class ValidateAgentsTest(unittest.TestCase):
                 problems,
             )
 
+    def test_versions_support_driver_modules_variable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "settings.gradle").write_text(
+                "def infrastructureModules = ['common', 'test-support']\n"
+                "def driverModules = ['h2', 'oracle']\n"
+                "include(*(infrastructureModules + driverModules))\n",
+                encoding="utf-8",
+            )
+            (root / "versions.json").write_text(
+                json.dumps({"h2": "0.1.0", "oracle": "0.1.0"}),
+                encoding="utf-8",
+            )
+
+            self.assertEqual([], validate_agents.validate_versions(root))
+
     def test_source_scan_rejects_old_execute_query_patterns(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -245,6 +261,35 @@ class ValidateAgentsTest(unittest.TestCase):
 
             self.assertEqual([], validate_agents.validate_manifest_fields(root, {"h2"}))
 
+    def test_manifest_validation_supports_drivers_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            module = root / "drivers/h2"
+            source = module / "src/main/java/com/dbx/agent/h2/H2Agent.java"
+            source.parent.mkdir(parents=True)
+            source.write_text("package com.dbx.agent.h2; public final class H2Agent {}", encoding="utf-8")
+            (root / "build.gradle").write_text(
+                'archiveBaseName = "dbx-agent-${project.name}"\n',
+                encoding="utf-8",
+            )
+            (module / "build.gradle").write_text(
+                textwrap.dedent(
+                    """
+                    tasks.named('shadowJar') {
+                        manifest {
+                            attributes(
+                                'Agent-Label': 'H2',
+                                'Main-Class': 'com.dbx.agent.h2.H2Agent'
+                            )
+                        }
+                    }
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual([], validate_agents.validate_manifest_fields(root, {"h2"}))
+
     def test_kotlin_residue_scan_rejects_kt_and_kts_files_outside_build_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -365,6 +410,22 @@ class ValidateAgentsTest(unittest.TestCase):
             )
 
             with zipfile.ZipFile(jar, "a") as archive:
+                archive.writestr("com/dbx/agent/h2/H2Agent.class", b"class-bytes")
+
+            self.assertEqual([], validate_agent_jars.validate_agent_jars(root))
+
+    def test_agent_jar_validation_supports_drivers_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jar = root / "drivers/h2/build/libs/dbx-agent-h2.jar"
+            jar.parent.mkdir(parents=True)
+            with zipfile.ZipFile(jar, "w") as archive:
+                archive.writestr(
+                    "META-INF/MANIFEST.MF",
+                    "Manifest-Version: 1.0\n"
+                    "Agent-Label: H2\n"
+                    "Main-Class: com.dbx.agent.h2.H2Agent\n\n",
+                )
                 archive.writestr("com/dbx/agent/h2/H2Agent.class", b"class-bytes")
 
             self.assertEqual([], validate_agent_jars.validate_agent_jars(root))

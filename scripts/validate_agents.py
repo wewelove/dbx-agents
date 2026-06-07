@@ -7,12 +7,12 @@ from typing import Optional
 
 
 INFRA_MODULES = {"common", "test-support"}
-SOURCE_GLOBS = ("*/src/main/**/*.java",)
+SOURCE_GLOBS = ("*/src/main/**/*.java", "drivers/*/src/main/**/*.java")
 KOTLIN_FILE_SUFFIXES = (".kt", ".kts")
 KOTLIN_SCAN_EXCLUDED_PARTS = {".git", ".gradle", "build"}
 DEFAULT_AGENT_JRE_KEY = "21"
 LEGACY_ORACLE_JRE_KEY = "8"
-NON_JDBC_AGENT_MODULES = {"mongodb"}
+NON_JDBC_AGENT_MODULES = {"mongodb", "etcd"}
 JDBC_ARCHITECTURE_ALLOWLIST = {
     "access": "custom Access metadata and URL behavior pending migration",
     "dameng": "custom Dameng metadata and DDL pending migration",
@@ -58,7 +58,23 @@ def included_agent_modules(root: Path) -> set[str]:
             r"\binclude\b\s*(?:\((.*?)\)|([^\n]+))", settings, flags=re.S
         )
     )
-    return set(re.findall(r"""['"]([^'"]+)['"]""", include_args)) - INFRA_MODULES
+    included = set(re.findall(r"""['"]([^'"]+)['"]""", include_args))
+    for variable in ("infrastructureModules", "driverModules"):
+        match = re.search(rf"\bdef\s+{variable}\s*=\s*\[(.*?)\]", settings, flags=re.S)
+        if match:
+            included.update(re.findall(r"""['"]([^'"]+)['"]""", match.group(1)))
+    return included - INFRA_MODULES
+
+
+def module_dir(root: Path, module: str) -> Path:
+    nested = root / "drivers" / module
+    if nested.exists():
+        return nested
+    return root / module
+
+
+def module_relative_path(root: Path, module: str, *parts: str) -> Path:
+    return module_dir(root, module).joinpath(*parts)
 
 
 def validate_versions(root: Path) -> list[str]:
@@ -104,7 +120,7 @@ def validate_manifest_fields(root: Path, modules: set[str]) -> list[str]:
         root_build_text,
     )
     for module in sorted(modules):
-        build_file = root / module / "build.gradle"
+        build_file = module_relative_path(root, module, "build.gradle")
         relative = build_file.relative_to(root)
         if not build_file.exists():
             problems.append(f"{module}: missing build.gradle")
@@ -124,7 +140,12 @@ def validate_manifest_fields(root: Path, modules: set[str]) -> list[str]:
         if main_class is None:
             problems.append(f"{relative}: missing Main-Class manifest attribute")
         else:
-            main_source = root / module / "src/main/java" / Path(*main_class.split(".")).with_suffix(".java")
+            main_source = module_relative_path(
+                root,
+                module,
+                "src/main/java",
+                str(Path(*main_class.split(".")).with_suffix(".java")),
+            )
             if not main_source.exists():
                 problems.append(f"{relative}: Main-Class source not found: {main_source.relative_to(root)}")
     return problems
@@ -167,14 +188,14 @@ def validate_authoring_template(root: Path) -> list[str]:
 
 
 def main_class_source(root: Path, module: str) -> Optional[Path]:
-    build_file = root / module / "build.gradle"
+    build_file = module_relative_path(root, module, "build.gradle")
     if not build_file.exists():
         return None
     attrs = manifest_attributes(build_file.read_text(encoding="utf-8"))
     main_class = attrs.get("Main-Class")
     if main_class is None:
         return None
-    return root / module / "src/main/java" / Path(*main_class.split(".")).with_suffix(".java")
+    return module_relative_path(root, module, "src/main/java", str(Path(*main_class.split(".")).with_suffix(".java")))
 
 
 def validate_release_runtime_keys(root: Path) -> list[str]:

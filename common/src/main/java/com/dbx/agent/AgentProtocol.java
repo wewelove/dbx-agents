@@ -35,6 +35,11 @@ public final class AgentProtocol {
     public static final String MONGO_METHOD_UPDATE_DOCUMENT = "update_document";
     public static final String MONGO_METHOD_DELETE_DOCUMENT = "delete_document";
 
+    public static final String KV_METHOD_LIST_PREFIX = "kv_list_prefix";
+    public static final String KV_METHOD_GET = "kv_get";
+    public static final String KV_METHOD_PUT = "kv_put";
+    public static final String KV_METHOD_DELETE = "kv_delete";
+
     public static final String CAPABILITY_CONNECT = "connect";
     public static final String CAPABILITY_TEST_CONNECTION = "test_connection";
     public static final String CAPABILITY_METADATA = "metadata";
@@ -42,6 +47,7 @@ public final class AgentProtocol {
     public static final String CAPABILITY_PAGED_QUERY = "paged_query";
     public static final String CAPABILITY_TRANSACTION = "transaction";
     public static final String CAPABILITY_DDL = "ddl";
+    public static final String CAPABILITY_KV = "kv";
 
     public static final List<String> CAPABILITIES = Collections.unmodifiableList(Arrays.asList(
         CAPABILITY_CONNECT,
@@ -83,6 +89,13 @@ public final class AgentProtocol {
         MONGO_METHOD_INSERT_DOCUMENT,
         MONGO_METHOD_UPDATE_DOCUMENT,
         MONGO_METHOD_DELETE_DOCUMENT
+    ));
+
+    public static final List<String> KV_METHODS = Collections.unmodifiableList(Arrays.asList(
+        KV_METHOD_LIST_PREFIX,
+        KV_METHOD_GET,
+        KV_METHOD_PUT,
+        KV_METHOD_DELETE
     ));
 
     private AgentProtocol() {

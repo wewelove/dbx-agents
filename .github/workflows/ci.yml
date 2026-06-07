@@ -25,4 +25,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: agent-jars
-          path: "*/build/libs/dbx-agent-*.jar"
+          path: "drivers/*/build/libs/dbx-agent-*.jar"

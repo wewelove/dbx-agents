@@ -42,6 +42,7 @@ Each agent runs as a standalone JVM process and communicates with DBX via stdin/
 | yashandb | 崖山 YashanDB | YashanDB JDBC |
 | xugu | 虚谷 XuguDB | XuguDB JDBC |
 | iotdb | Apache IoTDB | IoTDB JDBC |
+| etcd | etcd | jetcd |
 
 ## Multi-JRE Support
 
@@ -55,7 +56,7 @@ Requires JDK 8 and 21 (Gradle toolchain auto-downloads if needed).
 ./gradlew shadowJar
 ```
 
-Output JARs are in `{module}/build/libs/`.
+Output JARs are in `drivers/{module}/build/libs/`.
 
 ## Development
 
