@@ -14,6 +14,29 @@ class H2AgentMigrationTest {
     void agentExtendsBaseDatabaseAgent() {
         Assertions.assertTrue(BaseDatabaseAgent.class.isAssignableFrom(H2Agent.class));
     }
+
+    @Test
+    void buildUrlUsesExplicitConnectionString() {
+        ConnectParams params = new ConnectParams(
+            "127.0.0.1",
+            9092,
+            "test",
+            "sa",
+            "",
+            "",
+            "jdbc:h2:file:/tmp/dbx-h2-test;AUTO_SERVER=TRUE",
+            false
+        );
+
+        Assertions.assertEquals("jdbc:h2:file:/tmp/dbx-h2-test;AUTO_SERVER=TRUE", H2Agent.buildUrl(params));
+    }
+
+    @Test
+    void buildUrlKeepsTcpModeWhenNoConnectionString() {
+        ConnectParams params = new ConnectParams("127.0.0.1", 9092, "test", "sa", "", "", "", false);
+
+        Assertions.assertEquals("jdbc:h2:tcp://127.0.0.1:9092/test", H2Agent.buildUrl(params));
+    }
 }
 
 class H2ExecutionBehaviorTest extends JdbcExecutionBehaviorTest {

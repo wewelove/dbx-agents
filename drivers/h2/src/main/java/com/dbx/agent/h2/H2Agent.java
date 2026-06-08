@@ -320,7 +320,11 @@ public final class H2Agent extends AbstractJdbcAgent {
         return unchecked(() -> JdbcExecutor.INSTANCE.defaultResultValue(rs, index, sqlType));
     }
 
-    private static String buildUrl(ConnectParams params) {
+    static String buildUrl(ConnectParams params) {
+        String connectionString = params.getConnection_string();
+        if (connectionString != null && !connectionString.trim().isEmpty()) {
+            return connectionString.trim();
+        }
         if (params.getHost().isBlank()) {
             return "jdbc:h2:" + params.getDatabase();
         }
