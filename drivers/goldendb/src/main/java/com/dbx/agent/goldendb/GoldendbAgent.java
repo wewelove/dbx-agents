@@ -82,7 +82,7 @@ public final class GoldendbAgent extends BaseDatabaseAgent {
         return unchecked(() -> {
             List<TableInfo> result = new ArrayList<>();
             try (java.sql.PreparedStatement stmt = requireConnected().prepareStatement(
-                "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
+                "SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
             )) {
                 stmt.setString(1, schema);
                 try (ResultSet rs = stmt.executeQuery()) {
@@ -91,7 +91,7 @@ public final class GoldendbAgent extends BaseDatabaseAgent {
                         if ("BASE TABLE".equals(tableType)) {
                             tableType = "TABLE";
                         }
-                        result.add(new TableInfo(rs.getString("TABLE_NAME"), tableType, null));
+                        result.add(new TableInfo(rs.getString("TABLE_NAME"), tableType, emptyToNull(rs.getString("TABLE_COMMENT"))));
                     }
                 }
             }
