@@ -45,10 +45,10 @@ class DatabendAgentTest extends JdbcFakeExecutionBehaviorTest {
     }
 
     @Test
-    void usesBacktickQuotedDatabaseAsExecutionContext() {
+    void usesDoubleQuotedDatabaseAsExecutionContext() {
         Assertions.assertEquals(
-            "USE `analytics``prod`",
-            DatabendAgent.DATABEND_PROFILE.schemaSwitchSql("analytics`prod")
+            "USE \"analytics\"\"prod\"",
+            DatabendAgent.DATABEND_PROFILE.schemaSwitchSql("analytics\"prod")
         );
     }
 }

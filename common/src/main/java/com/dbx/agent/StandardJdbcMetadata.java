@@ -175,8 +175,54 @@ public final class StandardJdbcMetadata {
         return Collections.emptyList();
     }
 
+    private static String[] getDriverTableTypes(DatabaseMetaData meta, JdbcAgentProfile profile) throws Exception {
+        Set<String> configuredTypes = new LinkedHashSet<>();
+        for (String type : profile.getTableTypes()) {
+            if (type != null) {
+                configuredTypes.add(type.toUpperCase(Locale.ROOT));
+            }
+        }
+        try (ResultSet rs = meta.getTableTypes()) {
+            List<String> types = new ArrayList<>();
+            while (rs.next()) {
+                String type = rs.getString("TABLE_TYPE");
+                if (type != null && configuredTypes.contains(type.toUpperCase(Locale.ROOT))) {
+                    types.add(type);
+                }
+            }
+            if (!types.isEmpty()) {
+                return types.toArray(new String[0]);
+            }
+        } catch (Exception ignored) {
+        }
+        return profile.getTableTypes().toArray(new String[profile.getTableTypes().size()]);
+    }
+
+    public static String getIdentifierQuote(Connection conn, JdbcAgentProfile profile) {
+        try {
+            String quote = conn.getMetaData().getIdentifierQuoteString();
+            if (quote != null && !quote.trim().isEmpty()) {
+                return quote.trim();
+            }
+        } catch (Exception ignored) {
+        }
+        return profile.getIdentifierQuote();
+    }
+
+    public static String quoteIdentifier(String identifier, String quote) {
+        return quote + identifier.replace(quote, quote + quote) + quote;
+    }
+
+    public static String schemaSwitchSql(Connection conn, JdbcAgentProfile profile, String schema) {
+        if (profile.getSkipExecutionContext()) {
+            return profile.schemaSwitchSql(schema);
+        }
+        String quote = getIdentifierQuote(conn, profile);
+        return profile.schemaSwitchSql(schema, quote);
+    }
+
     private void appendTables(List<TableInfo> result, DatabaseMetaData meta, JdbcAgentProfile profile, String catalog, String schema) throws Exception {
-        String[] tableTypes = profile.getTableTypes().toArray(new String[profile.getTableTypes().size()]);
+        String[] tableTypes = getDriverTableTypes(meta, profile);
         try (ResultSet rs = meta.getTables(catalog, blankToNull(schema), "%", tableTypes)) {
             while (rs.next()) {
                 result.add(new TableInfo(

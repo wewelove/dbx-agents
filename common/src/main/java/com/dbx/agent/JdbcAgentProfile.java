@@ -34,7 +34,7 @@ public class JdbcAgentProfile {
             defaultPort,
             skipExecutionContext,
             Collections.emptySet(),
-            Arrays.asList("TABLE", "VIEW", "MATERIALIZED VIEW", "SYSTEM TABLE", "SYSTEM VIEW")
+            Arrays.asList("TABLE", "VIEW", "BASE TABLE", "MATERIALIZED VIEW", "SYSTEM TABLE", "SYSTEM VIEW")
         );
     }
 
@@ -155,10 +155,14 @@ public class JdbcAgentProfile {
     }
 
     public String schemaSwitchSql(String schema) {
+        return schemaSwitchSql(schema, identifierQuote);
+    }
+
+    public String schemaSwitchSql(String schema, String quote) {
         if (skipExecutionContext) {
             return "";
         }
-        return schemaSwitchPrefix + " " + quoteIdentifier(schema);
+        return schemaSwitchPrefix + " " + quote + schema.replace(quote, quote + quote) + quote;
     }
 
     private static String appendUrlParams(String url, String urlParams) {

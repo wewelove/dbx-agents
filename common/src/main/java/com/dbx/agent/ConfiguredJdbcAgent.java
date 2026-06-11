@@ -109,7 +109,7 @@ public abstract class ConfiguredJdbcAgent extends AbstractJdbcAgent {
         if (profile.getSkipExecutionContext()) {
             return "";
         }
-        return profile.schemaSwitchSql(schema);
+        return StandardJdbcMetadata.schemaSwitchSql(requireConnection(), profile, schema);
     }
 
     protected Connection requireConnection() {

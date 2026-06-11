@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -75,6 +76,29 @@ class StandardJdbcMetadataTest {
         assertEquals("VIEW", tables.get(0).getTable_type());
         assertEquals("ZETA", tables.get(1).getName());
         assertEquals("TABLE", tables.get(1).getTable_type());
+    }
+
+    @Test
+    void listTablesUsesDriverTableTypesWithinProfileAllowList() {
+        AtomicReference<String[]> capturedTypes = new AtomicReference<>();
+        Connection conn = connection(
+            rows(),
+            rows(row("TABLE_NAME", "ORDERS", "TABLE_TYPE", "TABLE", "REMARKS", null)),
+            rows(),
+            rows(),
+            rows(),
+            rows(),
+            rows(
+                row("TABLE_TYPE", "TABLE"),
+                row("TABLE_TYPE", "LOCAL TEMPORARY"),
+                row("TABLE_TYPE", "BASE TABLE")
+            ),
+            capturedTypes
+        );
+
+        StandardJdbcMetadata.INSTANCE.listTables(conn, profile, "", "APP");
+
+        assertEquals(Arrays.asList("TABLE", "BASE TABLE"), Arrays.asList(capturedTypes.get()));
     }
 
     @Test
@@ -170,6 +194,33 @@ class StandardJdbcMetadataTest {
         ResultSet foreignKeys,
         boolean unsupportedGetSchema
     ) {
+        return connection(schemas, tables, primaryKeys, columns, indexes, foreignKeys, unsupportedGetSchema, null, null);
+    }
+
+    private static Connection connection(
+        ResultSet schemas,
+        ResultSet tables,
+        ResultSet primaryKeys,
+        ResultSet columns,
+        ResultSet indexes,
+        ResultSet foreignKeys,
+        ResultSet tableTypes,
+        AtomicReference<String[]> capturedTableTypes
+    ) {
+        return connection(schemas, tables, primaryKeys, columns, indexes, foreignKeys, false, tableTypes, capturedTableTypes);
+    }
+
+    private static Connection connection(
+        ResultSet schemas,
+        ResultSet tables,
+        ResultSet primaryKeys,
+        ResultSet columns,
+        ResultSet indexes,
+        ResultSet foreignKeys,
+        boolean unsupportedGetSchema,
+        ResultSet tableTypes,
+        AtomicReference<String[]> capturedTableTypes
+    ) {
         DatabaseMetaData meta = proxy(DatabaseMetaData.class, new MethodHandler() {
             @Override
             public Object handle(Method method, Object[] args) {
@@ -178,7 +229,13 @@ class StandardJdbcMetadataTest {
                     return schemas;
                 }
                 if ("getTables".equals(name)) {
+                    if (capturedTableTypes != null && args != null && args.length > 3) {
+                        capturedTableTypes.set((String[]) args[3]);
+                    }
                     return tables;
+                }
+                if ("getTableTypes".equals(name) && tableTypes != null) {
+                    return tableTypes;
                 }
                 if ("getPrimaryKeys".equals(name)) {
                     return primaryKeys;
