@@ -32,4 +32,24 @@ class OracleAgentTest extends JdbcFakeExecutionBehaviorTest {
 
         Assertions.assertEquals("jdbc:oracle:thin:@oracle.example.com:1521:ORCL", OracleAgent.buildUrl(params));
     }
+
+    @Test
+    void prepareExecutableSqlKeepsPlsqlObjectTerminator() {
+        String sql = "CREATE OR REPLACE PROCEDURE APP_PROC AS BEGIN NULL; END;";
+
+        Assertions.assertEquals(sql, OracleAgent.prepareExecutableSql(sql));
+    }
+
+    @Test
+    void prepareExecutableSqlTrimsPlainStatementTerminator() {
+        Assertions.assertEquals("SELECT 1 FROM DUAL", OracleAgent.prepareExecutableSql("SELECT 1 FROM DUAL;"));
+    }
+
+    @Test
+    void prepareExecutableSqlStillRewritesFetchFirst() {
+        Assertions.assertEquals(
+            "SELECT * FROM (SELECT * FROM EMP) WHERE ROWNUM <= 10",
+            OracleAgent.prepareExecutableSql("SELECT * FROM EMP FETCH FIRST 10 ROWS ONLY;")
+        );
+    }
 }

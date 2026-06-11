@@ -53,6 +53,26 @@ class Oracle10gAgentTest extends JdbcFakeExecutionBehaviorTest {
     }
 
     @Test
+    void prepareExecutableSqlKeepsPlsqlObjectTerminator() {
+        String sql = "CREATE OR REPLACE PROCEDURE APP_PROC AS BEGIN NULL; END;";
+
+        Assertions.assertEquals(sql, Oracle10gAgent.prepareExecutableSql(sql));
+    }
+
+    @Test
+    void prepareExecutableSqlTrimsPlainStatementTerminator() {
+        Assertions.assertEquals("SELECT 1 FROM DUAL", Oracle10gAgent.prepareExecutableSql("SELECT 1 FROM DUAL;"));
+    }
+
+    @Test
+    void prepareExecutableSqlStillRewritesFetchFirst() {
+        Assertions.assertEquals(
+            "SELECT * FROM (SELECT * FROM EMP) WHERE ROWNUM <= 10",
+            Oracle10gAgent.prepareExecutableSql("SELECT * FROM EMP FETCH FIRST 10 ROWS ONLY;")
+        );
+    }
+
+    @Test
     void listsTablesViewsProceduresAndFunctions() {
         Oracle10gAgent agent = new Oracle10gAgent();
         TestSupport.setPrivateConnection(agent, objectListConnection());

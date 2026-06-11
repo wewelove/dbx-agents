@@ -50,6 +50,10 @@ public class OracleAgent extends BaseDatabaseAgent {
         "(.+?)\\s+FETCH\\s+(FIRST|NEXT)\\s+(\\d+)\\s+ROWS?\\s+ONLY",
         Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern PLSQL_OBJECT_DDL_RE = Pattern.compile(
+        "^\\s*CREATE\\s+(?:OR\\s+REPLACE\\s+)?(?:(?:NON)?EDITIONABLE\\s+)?(?:PROCEDURE|FUNCTION|PACKAGE(?:\\s+BODY)?|TRIGGER|TYPE(?:\\s+BODY)?)\\b",
+        Pattern.CASE_INSENSITIVE
+    );
 
     private Connection connection;
 
@@ -421,7 +425,7 @@ public class OracleAgent extends BaseDatabaseAgent {
     public QueryResult executeQuery(String sql, String schema, ExecuteQueryOptions options) {
         return JdbcExecutor.INSTANCE.execute(
             requireConnected(),
-            rewriteFetchFirst(trimEndSemicolons(sql.trim())),
+            prepareExecutableSql(sql),
             schema,
             this::setSchemaSQL,
             options.getMaxRows(),
@@ -434,7 +438,7 @@ public class OracleAgent extends BaseDatabaseAgent {
     public QueryPageResult executeQueryPage(String sql, String schema, QueryPageOptions options) {
         return JdbcExecutor.INSTANCE.executePage(
             requireConnected(),
-            rewriteFetchFirst(trimEndSemicolons(sql.trim())),
+            prepareExecutableSql(sql),
             schema,
             this::setSchemaSQL,
             options,
@@ -525,6 +529,14 @@ public class OracleAgent extends BaseDatabaseAgent {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    static String prepareExecutableSql(String sql) {
+        String trimmed = sql.trim();
+        if (PLSQL_OBJECT_DDL_RE.matcher(trimmed).find()) {
+            return trimmed;
+        }
+        return rewriteFetchFirst(trimEndSemicolons(trimmed));
     }
 
     public static void main(String[] args) {
