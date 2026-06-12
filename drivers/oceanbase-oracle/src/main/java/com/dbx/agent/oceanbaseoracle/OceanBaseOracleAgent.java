@@ -6,8 +6,8 @@ import com.dbx.agent.JsonRpcServer;
 
 public final class OceanBaseOracleAgent extends ConfiguredJdbcAgent {
     public static final JdbcAgentProfile OCEANBASE_ORACLE_PROFILE = new JdbcAgentProfile(
-        "oracle.jdbc.OracleDriver",
-        "jdbc:oracle:thin:@//{host}:{port}/{database}",
+        "com.oceanbase.jdbc.Driver",
+        "jdbc:oceanbase://{host}:{port}/{database}",
         2881,
         false
     ) {
