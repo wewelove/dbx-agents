@@ -40,6 +40,14 @@ jobs:
               else
                 CHECK_DIR="$dir"
               fi
+              EXTRA_CHECK_DIR=""
+              if [ "$dir" = "oracle" ]; then
+                EXTRA_CHECK_DIR="drivers/oracle-go"
+              fi
+              DIFF_PATHS=("$CHECK_DIR/")
+              if [ -n "$EXTRA_CHECK_DIR" ]; then
+                DIFF_PATHS+=("$EXTRA_CHECK_DIR/")
+              fi
               # common changes affect all modules
               if git diff --quiet "$PREV_TAG"..HEAD -- common/ 2>/dev/null; then
                 COMMON_CHANGED=false
@@ -47,7 +55,7 @@ jobs:
                 COMMON_CHANGED=true
               fi
 
-              if git diff --quiet "$PREV_TAG"..HEAD -- "$CHECK_DIR/" 2>/dev/null && [ "$COMMON_CHANGED" = "false" ]; then
+              if git diff --quiet "$PREV_TAG"..HEAD -- "${DIFF_PATHS[@]}" 2>/dev/null && [ "$COMMON_CHANGED" = "false" ]; then
                 echo "  $dir: no changes"
               else
                 echo "  $dir: CHANGED"
@@ -99,6 +107,45 @@ jobs:
         with:
           name: agent-jars
           path: "drivers/*/build/libs/dbx-agent-*.jar"
+
+  build-oracle-native:
+    needs: [bump-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+      - name: Test Oracle native agent
+        working-directory: drivers/oracle-go
+        run: go test ./...
+      - name: Cross-compile Oracle native agent
+        shell: bash
+        run: |
+          mkdir -p release-native
+          cd drivers/oracle-go
+          declare -A TARGETS=(
+            ["macos-aarch64"]="darwin/arm64"
+            ["macos-x64"]="darwin/amd64"
+            ["linux-aarch64"]="linux/arm64"
+            ["linux-x64"]="linux/amd64"
+            ["windows-aarch64"]="windows/arm64"
+            ["windows-x64"]="windows/amd64"
+          )
+          for platform in "${!TARGETS[@]}"; do
+            IFS=/ read -r goos goarch <<< "${TARGETS[$platform]}"
+            output="../../release-native/dbx-agent-oracle-${platform}"
+            if [[ "$goos" == "windows" ]]; then
+              output="${output}.exe"
+            fi
+            echo "Building $platform ($goos/$goarch)"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="-s -w" -o "$output" .
+          done
+          ls -lh ../../release-native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oracle-native
+          path: "release-native/dbx-agent-oracle-*"
 
   build-jre:
     runs-on: ubuntu-latest
@@ -214,7 +261,7 @@ jobs:
           path: "dbx-jre-8-*.tar.gz"
 
   release:
-    needs: [bump-versions, build-agents, build-jre, build-jre8]
+    needs: [bump-versions, build-agents, build-oracle-native, build-jre, build-jre8]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -226,6 +273,7 @@ jobs:
         run: |
           mkdir -p release
           find artifacts/agent-jars -name '*.jar' -exec cp {} release/ \;
+          find artifacts/oracle-native -type f -name 'dbx-agent-oracle-*' -exec cp {} release/ \;
           find artifacts -name 'dbx-jre-*.tar.gz' -exec cp {} release/ \;
           ls -lh release/
 
@@ -242,10 +290,15 @@ jobs:
           }
 
           generate_jar_entry() {
-            local name="$1" label="$2" file="$3" jre_key="$4" version="$5" external_driver="$6"
+            local name="$1" label="$2" file="$3" jre_key="$4" version="$5" external_driver="$6" native_json="$7"
             local sha256=$(sha256sum "$file" | cut -d' ' -f1)
             local size=$(stat -c%s "$file")
             local url="https://github.com/${REPO}/releases/download/${TAG}/$(basename $file)"
+            local native_line=""
+            if [ -n "$native_json" ]; then
+              native_line="                \"native\": {${native_json}
+                },"
+            fi
             cat <<ENTRY
               "${name}": {
                 "version": "${version}",
@@ -253,6 +306,7 @@ jobs:
                 "min_app_version": "0.6.0",
                 "jre": "${jre_key}",
                 "external_driver_required": ${external_driver},
+                ${native_line}
                 "jar": { "url": "${url}", "sha256": "${sha256}", "size": ${size} }
               }
           ENTRY
@@ -269,6 +323,22 @@ jobs:
               url="https://github.com/${REPO}/releases/download/${TAG}/$(basename $f)"
               [ -n "$PLATFORMS" ] && PLATFORMS="${PLATFORMS},"$'\n'
               PLATFORMS="${PLATFORMS}              \"${p}\": { \"url\": \"${url}\", \"sha256\": \"${sha256}\", \"size\": ${size} }"
+            done
+            echo "$PLATFORMS"
+          }
+
+          generate_native_platforms() {
+            local name="$1"
+            local PLATFORMS=""
+            for f in release/dbx-agent-${name}-*; do
+              [ ! -f "$f" ] && continue
+              [[ "$f" != *.jar ]] || continue
+              p=$(basename "$f" | sed "s/dbx-agent-${name}-//; s/\\.exe$//")
+              sha256=$(sha256sum "$f" | cut -d' ' -f1)
+              size=$(stat -c%s "$f")
+              url="https://github.com/${REPO}/releases/download/${TAG}/$(basename $f)"
+              [ -n "$PLATFORMS" ] && PLATFORMS="${PLATFORMS},"$'\n'
+              PLATFORMS="${PLATFORMS}"$'\n'"                  \"${p}\": { \"url\": \"${url}\", \"sha256\": \"${sha256}\", \"size\": ${size} }"
             done
             echo "$PLATFORMS"
           }
@@ -293,8 +363,9 @@ jobs:
             [ "$external_driver" = "true" ] || external_driver="false"
             jre_key=$(detect_jre_key "$name")
             version=$(get_module_version "$name")
+            native_json=$(generate_native_platforms "$name")
             [ -n "$DRIVERS" ] && DRIVERS="${DRIVERS},"$'\n'
-            DRIVERS="${DRIVERS}$(generate_jar_entry "$name" "$label" "$f" "$jre_key" "$version" "$external_driver")"
+            DRIVERS="${DRIVERS}$(generate_jar_entry "$name" "$label" "$f" "$jre_key" "$version" "$external_driver" "$native_json")"
           done
 
           cat > release/agent-registry.json <<EOF
@@ -348,9 +419,13 @@ jobs:
             else
               LOG_PATH="$name/"
             fi
+            LOG_PATHS=("$LOG_PATH")
+            if [ "$name" = "oracle" ]; then
+              LOG_PATHS+=("drivers/oracle-go/")
+            fi
             while IFS= read -r line; do
               [ -n "$line" ] && NOTES="${NOTES}- ${line}"$'\n'
-            done < <(git log --oneline "$PREV_TAG"..HEAD -- "$LOG_PATH" | sed 's/^[0-9a-f]* //')
+            done < <(git log --oneline "$PREV_TAG"..HEAD -- "${LOG_PATHS[@]}" | sed 's/^[0-9a-f]* //')
 
             # include common changes if any
             while IFS= read -r line; do
@@ -408,6 +483,15 @@ jobs:
             UPLOADED=$((UPLOADED + 1))
           done
           echo "Drivers: $UPLOADED uploaded, $SKIPPED skipped"
+
+          for f in release/dbx-agent-oracle-*; do
+            [ -f "$f" ] || continue
+            [[ "$f" != *.jar ]] || continue
+            aws s3 cp "$f" \
+              "$R2_BUCKET/agents/drivers/$(basename $f)" \
+              --endpoint-url "$R2_ENDPOINT"
+            echo "Uploaded $(basename $f)"
+          done
 
           # Upload JRE — always overwrite to ensure latest modules
           for f in release/dbx-jre-*.tar.gz; do

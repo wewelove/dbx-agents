@@ -50,6 +50,11 @@ for platform in "${PLATFORMS[@]}"; do
     cp "$jar_file" "$WORK/drivers/"
   done
 
+  for native_file in "$RELEASE_DIR"/dbx-agent-*-"$platform" "$RELEASE_DIR"/dbx-agent-*-"$platform".exe; do
+    [ -f "$native_file" ] || continue
+    cp "$native_file" "$WORK/drivers/"
+  done
+
   ZIP_NAME="dbx-agents-offline-${platform}.zip"
   (cd "$WORK" && zip -r "$RELEASE_DIR/$ZIP_NAME" agent-registry.json jre/ drivers/)
   SIZE=$(du -h "$RELEASE_DIR/$ZIP_NAME" | cut -f1)

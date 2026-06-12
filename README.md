@@ -1,8 +1,8 @@
 # DBX Agents
 
-Agent drivers for [DBX](https://github.com/t8y2/dbx) — database support via JDBC.
+Agent drivers for [DBX](https://github.com/t8y2/dbx) — database support via JDBC and native database drivers.
 
-Each agent runs as a standalone JVM process and communicates with DBX via stdin/stdout JSON-RPC 2.0.
+Each agent runs as a standalone process and communicates with DBX via stdin/stdout JSON-RPC 2.0.
 
 ## Supported Databases
 
@@ -23,9 +23,9 @@ Each agent runs as a standalone JVM process and communicates with DBX via stdin/
 | oceanbase-oracle | OceanBase Oracle Mode | OceanBase JDBC |
 | gbase | GBase | External GBase JDBC |
 | gbase8s | GBase 8s | External GBase 8s JDBC |
-| oracle | Oracle 19c+ | ojdbc17 |
-| oracle-legacy | Oracle 11g/12c/18c/19c | ojdbc8 |
-| oracle-10g | Oracle 10g | ojdbc6 (JRE 8) |
+| oracle | Oracle 10g+ | go-ora native agent |
+| oracle-legacy | Oracle 11g/12c/18c/19c | ojdbc8 (compatibility fallback) |
+| oracle-10g | Oracle 10g | ojdbc6 (compatibility fallback, JRE 8) |
 | h2 | H2 | H2 JDBC |
 | snowflake | Snowflake | Snowflake JDBC |
 | trino | Trino (Presto) | Trino JDBC |
@@ -46,7 +46,7 @@ Each agent runs as a standalone JVM process and communicates with DBX via stdin/
 
 ## Multi-JRE Support
 
-Most agents target JRE 21. Agents that require legacy Java runtimes (e.g. `oracle-10g` uses JRE 8) declare their JRE version in the registry. DBX downloads and manages multiple JRE installations automatically.
+Most Java agents target JRE 21. Native agents, such as `oracle`, do not require a JRE. Agents that still require legacy Java runtimes (e.g. compatibility fallback `oracle-10g` uses JRE 8) declare their JRE version in the registry. DBX downloads and manages multiple JRE installations automatically.
 
 ## Build
 
@@ -54,9 +54,10 @@ Requires JDK 8 and 21 (Gradle toolchain auto-downloads if needed).
 
 ```bash
 ./gradlew shadowJar
+(cd drivers/oracle-go && go build -o agent .)
 ```
 
-Output JARs are in `drivers/{module}/build/libs/`.
+Output JARs are in `drivers/{module}/build/libs/`. The Oracle native agent builds from `drivers/oracle-go`.
 
 ## Development
 
@@ -70,10 +71,10 @@ Output JARs are in `drivers/{module}/build/libs/`.
 DBX Main Process (Rust/Tauri)
     │ stdin/stdout (JSON-RPC 2.0)
     ▼
-java -jar dbx-agent-{type}.jar
+agent / java -jar dbx-agent-{type}.jar
     │
     ▼
-JDBC → Database
+Native driver / JDBC → Database
 ```
 
 ## License
