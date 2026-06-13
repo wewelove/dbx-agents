@@ -9,9 +9,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +42,46 @@ class PostgresLikeAgentTest {
         assertTrue(sql.contains("pg_catalog.pg_trigger"), sql);
     }
 
+    @Test
+    void postgisGeometryTypeNameDetection() {
+        assertTrue(PostgresLikeAgent.isPostgisGeometryTypeName("geometry"));
+        assertTrue(PostgresLikeAgent.isPostgisGeometryTypeName("GEOMETRY"));
+        assertTrue(PostgresLikeAgent.isPostgisGeometryTypeName(" Geography "));
+        assertTrue(PostgresLikeAgent.isPostgisGeometryTypeName("public.geometry"));
+        assertTrue(PostgresLikeAgent.isPostgisGeometryTypeName("geometry(Point,4326)"));
+        assertFalse(PostgresLikeAgent.isPostgisGeometryTypeName(""));
+        assertFalse(PostgresLikeAgent.isPostgisGeometryTypeName(null));
+        assertFalse(PostgresLikeAgent.isPostgisGeometryTypeName("text"));
+        assertFalse(PostgresLikeAgent.isPostgisGeometryTypeName("vector"));
+    }
+
+    @Test
+    void executeQueryDecodesGeometryColumnsToWktAndReportsColumnTypes() {
+        TestPostgresLikeAgent agent = new TestPostgresLikeAgent();
+        agent.connect(new ConnectParams());
+
+        QueryResult result = JdbcExecutor.INSTANCE.readResultSet(
+            GeometryResultSet.create(),
+            5L,
+            JdbcExecutor.DEFAULT_MAX_ROWS,
+            agent.geometryAwareResolverForTest()
+        );
+
+        assertEquals(2, result.getColumns().size());
+        assertEquals("id", result.getColumns().get(0));
+        assertEquals("geom", result.getColumns().get(1));
+
+        // column_types is reported via JDBC getColumnTypeName
+        assertEquals(2, result.getColumn_types().size());
+        assertEquals("int4", result.getColumn_types().get(0));
+        assertEquals("geometry", result.getColumn_types().get(1));
+
+        // The geometry cell is decoded to WKT (matches Rust ewkb_to_wkt fixture).
+        assertEquals(1, result.getRows().size());
+        assertEquals(1, result.getRows().get(0).get(0));
+        assertEquals("POINT(116.397 39.908)", result.getRows().get(0).get(1));
+    }
+
     private static final class TestPostgresLikeAgent extends PostgresLikeAgent {
         private TestPostgresLikeAgent() {
             super(new PostgresLikeAgentProfile(
@@ -51,6 +93,94 @@ class PostgresLikeAgentTest {
         @Override
         protected Connection openConnection(ConnectParams params) {
             return MetadataSqlFake.connection();
+        }
+
+        JdbcExecutor.ColumnAwareResultValueReader geometryAwareResolverForTest() {
+            return (rs, index, sqlType, columnTypeName) -> {
+                if (PostgresLikeAgent.isPostgisGeometryTypeName(columnTypeName)) {
+                    Object raw = rs.getObject(index);
+                    if (rs.wasNull() || raw == null) {
+                        return null;
+                    }
+                    return EwkbWktDecoder.decode(raw);
+                }
+                if (sqlType == Types.INTEGER) {
+                    return rs.getInt(index);
+                }
+                return rs.getObject(index);
+            };
+        }
+    }
+
+    private static final class GeometryResultSet {
+        static ResultSet create() {
+            ResultSetMetaData meta = (ResultSetMetaData) Proxy.newProxyInstance(
+                GeometryResultSet.class.getClassLoader(),
+                new Class<?>[]{ResultSetMetaData.class},
+                (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getColumnCount":
+                            return 2;
+                        case "getColumnLabel":
+                        case "getColumnName":
+                            return ((Integer) args[0]) == 1 ? "id" : "geom";
+                        case "getColumnType":
+                            return ((Integer) args[0]) == 1 ? Types.INTEGER : Types.OTHER;
+                        case "getColumnTypeName":
+                            return ((Integer) args[0]) == 1 ? "int4" : "geometry";
+                        default:
+                            return null;
+                    }
+                }
+            );
+
+            // POINT(116.397 39.908) with SRID=4326, little-endian.
+            String hex = "0101000020E6100000C520B07268195D404E62105839F44340";
+            byte[] geomBytes = parseHex(hex);
+
+            int[] cursor = new int[]{0}; // 0 = before first row
+            return (ResultSet) Proxy.newProxyInstance(
+                GeometryResultSet.class.getClassLoader(),
+                new Class<?>[]{ResultSet.class},
+                (proxy, method, args) -> {
+                    String name = method.getName();
+                    switch (name) {
+                        case "getMetaData":
+                            return meta;
+                        case "next":
+                            cursor[0] += 1;
+                            return cursor[0] == 1;
+                        case "getInt":
+                            return cursor[0] == 1 ? 1 : 0;
+                        case "getObject":
+                            return ((Integer) args[0]) == 2 ? geomBytes : 1;
+                        case "wasNull":
+                            return false;
+                        case "close":
+                            return null;
+                        default:
+                            return defaultPrimitive(method.getReturnType());
+                    }
+                }
+            );
+        }
+
+        private static byte[] parseHex(String s) {
+            byte[] out = new byte[s.length() / 2];
+            for (int i = 0; i < out.length; i++) {
+                int hi = Character.digit(s.charAt(i * 2), 16);
+                int lo = Character.digit(s.charAt(i * 2 + 1), 16);
+                out[i] = (byte) ((hi << 4) | lo);
+            }
+            return out;
+        }
+
+        private static Object defaultPrimitive(Class<?> t) {
+            if (Boolean.TYPE.equals(t)) return false;
+            if (Integer.TYPE.equals(t)) return 0;
+            if (Long.TYPE.equals(t)) return 0L;
+            if (Double.TYPE.equals(t)) return 0.0;
+            return null;
         }
     }
 

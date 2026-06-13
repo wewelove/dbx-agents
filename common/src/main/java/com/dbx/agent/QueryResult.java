@@ -7,6 +7,7 @@ import java.util.Objects;
 
 public final class QueryResult {
     private List<String> columns;
+    private List<String> column_types;
     private List<List<Object>> rows;
     private long affected_rows;
     private long execution_time_ms;
@@ -27,7 +28,19 @@ public final class QueryResult {
         long execution_time_ms,
         boolean truncated
     ) {
+        this(columns, null, rows, affected_rows, execution_time_ms, truncated);
+    }
+
+    public QueryResult(
+        List<String> columns,
+        List<String> column_types,
+        List<? extends List<?>> rows,
+        long affected_rows,
+        long execution_time_ms,
+        boolean truncated
+    ) {
         this.columns = columns == null ? Collections.emptyList() : columns;
+        this.column_types = column_types == null ? Collections.emptyList() : column_types;
         this.rows = normalizeRows(rows);
         this.affected_rows = affected_rows;
         this.execution_time_ms = execution_time_ms;
@@ -36,6 +49,10 @@ public final class QueryResult {
 
     public List<String> getColumns() {
         return columns;
+    }
+
+    public List<String> getColumn_types() {
+        return column_types;
     }
 
     public List<List<Object>> getRows() {
@@ -56,6 +73,10 @@ public final class QueryResult {
 
     public void setColumns(List<String> columns) {
         this.columns = columns;
+    }
+
+    public void setColumn_types(List<String> column_types) {
+        this.column_types = column_types;
     }
 
     public void setRows(List<List<Object>> rows) {
@@ -94,17 +115,19 @@ public final class QueryResult {
             && execution_time_ms == that.execution_time_ms
             && truncated == that.truncated
             && Objects.equals(columns, that.columns)
+            && Objects.equals(column_types, that.column_types)
             && Objects.equals(rows, that.rows);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(columns, rows, affected_rows, execution_time_ms, truncated);
+        return Objects.hash(columns, column_types, rows, affected_rows, execution_time_ms, truncated);
     }
 
     @Override
     public String toString() {
         return "QueryResult(columns=" + columns
+            + ", column_types=" + column_types
             + ", rows=" + rows
             + ", affected_rows=" + affected_rows
             + ", execution_time_ms=" + execution_time_ms

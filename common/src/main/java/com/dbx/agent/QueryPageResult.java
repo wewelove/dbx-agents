@@ -6,6 +6,7 @@ import java.util.Objects;
 
 public final class QueryPageResult {
     private List<String> columns;
+    private List<String> column_types;
     private List<List<Object>> rows;
     private long affected_rows;
     private long execution_time_ms;
@@ -40,7 +41,21 @@ public final class QueryPageResult {
         String session_id,
         boolean has_more
     ) {
+        this(columns, null, rows, affected_rows, execution_time_ms, truncated, session_id, has_more);
+    }
+
+    public QueryPageResult(
+        List<String> columns,
+        List<String> column_types,
+        List<? extends List<?>> rows,
+        long affected_rows,
+        long execution_time_ms,
+        boolean truncated,
+        String session_id,
+        boolean has_more
+    ) {
         this.columns = columns == null ? Collections.emptyList() : columns;
+        this.column_types = column_types == null ? Collections.emptyList() : column_types;
         this.rows = QueryResult.normalizeRows(rows);
         this.affected_rows = affected_rows;
         this.execution_time_ms = execution_time_ms;
@@ -51,6 +66,10 @@ public final class QueryPageResult {
 
     public List<String> getColumns() {
         return columns;
+    }
+
+    public List<String> getColumn_types() {
+        return column_types;
     }
 
     public List<List<Object>> getRows() {
@@ -79,6 +98,10 @@ public final class QueryPageResult {
 
     public void setColumns(List<String> columns) {
         this.columns = columns;
+    }
+
+    public void setColumn_types(List<String> column_types) {
+        this.column_types = column_types;
     }
 
     public void setRows(List<List<Object>> rows) {
@@ -115,18 +138,20 @@ public final class QueryPageResult {
             && truncated == that.truncated
             && has_more == that.has_more
             && Objects.equals(columns, that.columns)
+            && Objects.equals(column_types, that.column_types)
             && Objects.equals(rows, that.rows)
             && Objects.equals(session_id, that.session_id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(columns, rows, affected_rows, execution_time_ms, truncated, session_id, has_more);
+        return Objects.hash(columns, column_types, rows, affected_rows, execution_time_ms, truncated, session_id, has_more);
     }
 
     @Override
     public String toString() {
         return "QueryPageResult(columns=" + columns
+            + ", column_types=" + column_types
             + ", rows=" + rows
             + ", affected_rows=" + affected_rows
             + ", execution_time_ms=" + execution_time_ms

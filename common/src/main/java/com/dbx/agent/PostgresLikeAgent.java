@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public abstract class PostgresLikeAgent extends AbstractJdbcAgent {
@@ -25,6 +26,69 @@ public abstract class PostgresLikeAgent extends AbstractJdbcAgent {
 
     public boolean isMysqlCompatMode() {
         return mysqlCompatMode;
+    }
+
+    @Override
+    public QueryResult executeQuery(String sql, String schema, ExecuteQueryOptions options) {
+        return JdbcExecutor.INSTANCE.execute(
+            requireConnected(),
+            sql,
+            schema,
+            this::setSchemaSQL,
+            options.getMaxRows(),
+            options.getFetchSize(),
+            geometryAwareResolver()
+        );
+    }
+
+    @Override
+    public QueryPageResult executeQueryPage(String sql, String schema, QueryPageOptions options) {
+        return JdbcExecutor.INSTANCE.executePage(
+            requireConnected(),
+            sql,
+            schema,
+            this::setSchemaSQL,
+            options,
+            geometryAwareResolver()
+        );
+    }
+
+    /**
+     * Wrap {@link AbstractJdbcAgent#resultValue} so PostGIS-style {@code geometry}
+     * and {@code geography} columns are decoded into WKT (matching the native
+     * tokio_postgres path in {@code crates/dbx-core/src/db/postgres.rs}).
+     */
+    private JdbcExecutor.ColumnAwareResultValueReader geometryAwareResolver() {
+        return (rs, index, sqlType, columnTypeName) -> {
+            if (isPostgisGeometryTypeName(columnTypeName)) {
+                Object raw = rs.getObject(index);
+                if (rs.wasNull() || raw == null) {
+                    return null;
+                }
+                return EwkbWktDecoder.decode(raw);
+            }
+            return resultValue(rs, index, sqlType);
+        };
+    }
+
+    static boolean isPostgisGeometryTypeName(String columnTypeName) {
+        if (columnTypeName == null) {
+            return false;
+        }
+        String trimmed = columnTypeName.trim().toLowerCase(Locale.ROOT);
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        // Strip optional schema prefix (e.g. "public.geometry") or "(srid,type)" suffix.
+        int dot = trimmed.lastIndexOf('.');
+        if (dot >= 0 && dot < trimmed.length() - 1) {
+            trimmed = trimmed.substring(dot + 1);
+        }
+        int paren = trimmed.indexOf('(');
+        if (paren >= 0) {
+            trimmed = trimmed.substring(0, paren);
+        }
+        return "geometry".equals(trimmed) || "geography".equals(trimmed);
     }
 
     private String quoteIdentifier(String identifier) {

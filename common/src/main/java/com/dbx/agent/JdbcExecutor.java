@@ -113,8 +113,13 @@ public final class JdbcExecutor {
             ResultSetMetaData meta = rs.getMetaData();
             int colCount = meta.getColumnCount();
             List<String> columns = new ArrayList<>();
+            List<String> columnTypes = new ArrayList<>();
+            String[] typeNameByIndex = new String[colCount];
             for (int i = 1; i <= colCount; i++) {
                 columns.add(meta.getColumnLabel(i));
+                String typeName = safeColumnTypeName(meta, i);
+                columnTypes.add(typeName);
+                typeNameByIndex[i - 1] = typeName;
             }
 
             List<List<Object>> rows = new ArrayList<>();
@@ -124,10 +129,10 @@ public final class JdbcExecutor {
                     truncated = true;
                     break;
                 }
-                rows.add(rowValues(rs, valueReader));
+                rows.add(rowValues(rs, valueReader, typeNameByIndex));
             }
 
-            return new QueryResult(columns, rows, 0L, executionTimeMs, truncated);
+            return new QueryResult(columns, columnTypes, rows, 0L, executionTimeMs, truncated);
         });
     }
 
@@ -202,11 +207,23 @@ public final class JdbcExecutor {
                 ResultSet rs = stmt.getResultSet();
                 ResultSetMetaData meta = rs.getMetaData();
                 String sessionId = UUID.randomUUID().toString();
+                int colCount = meta.getColumnCount();
+                List<String> columns = new ArrayList<>(colCount);
+                List<String> columnTypes = new ArrayList<>(colCount);
+                String[] typeNameByIndex = new String[colCount];
+                for (int i = 1; i <= colCount; i++) {
+                    columns.add(meta.getColumnLabel(i));
+                    String typeName = safeColumnTypeName(meta, i);
+                    columnTypes.add(typeName);
+                    typeNameByIndex[i - 1] = typeName;
+                }
                 QuerySession session = new QuerySession(
                     sessionId,
                     stmt,
                     rs,
-                    resultColumns(meta),
+                    columns,
+                    columnTypes,
+                    typeNameByIndex,
                     Math.max(options.getMaxRows(), 1),
                     valueReader
                 );
@@ -391,27 +408,27 @@ public final class JdbcExecutor {
             while (rows.size() < effectivePageSize && session.rowsRead < session.maxRows) {
                 if (!session.resultSet.next()) {
                     closeSession(session.id);
-                    return new QueryPageResult(session.columns, rows, 0L, executionTimeMs, false, null, false);
+                    return new QueryPageResult(session.columns, session.columnTypes, rows, 0L, executionTimeMs, false, null, false);
                 }
-                rows.add(rowValues(session.resultSet, session.valueReader));
+                rows.add(rowValues(session.resultSet, session.valueReader, session.typeNameByIndex));
                 session.rowsRead += 1;
             }
 
             if (session.rowsRead >= session.maxRows) {
                 boolean truncated = session.resultSet.next();
                 closeSession(session.id);
-                return new QueryPageResult(session.columns, rows, 0L, executionTimeMs, truncated, null, false);
+                return new QueryPageResult(session.columns, session.columnTypes, rows, 0L, executionTimeMs, truncated, null, false);
             }
 
             boolean hasMore = session.resultSet.next();
             if (!hasMore) {
                 closeSession(session.id);
-                return new QueryPageResult(session.columns, rows, 0L, executionTimeMs, false, null, false);
+                return new QueryPageResult(session.columns, session.columnTypes, rows, 0L, executionTimeMs, false, null, false);
             }
 
-            session.pendingRow = rowValues(session.resultSet, session.valueReader);
+            session.pendingRow = rowValues(session.resultSet, session.valueReader, session.typeNameByIndex);
             session.rowsRead += 1;
-            return new QueryPageResult(session.columns, rows, 0L, executionTimeMs, false, session.id, true);
+            return new QueryPageResult(session.columns, session.columnTypes, rows, 0L, executionTimeMs, false, session.id, true);
         });
     }
 
@@ -433,19 +450,31 @@ public final class JdbcExecutor {
         return true;
     }
 
-    private List<String> resultColumns(ResultSetMetaData meta) throws SQLException {
-        List<String> columns = new ArrayList<>();
-        for (int i = 1; i <= meta.getColumnCount(); i++) {
-            columns.add(meta.getColumnLabel(i));
+    static String safeColumnTypeName(ResultSetMetaData meta, int columnIndex) {
+        try {
+            String name = meta.getColumnTypeName(columnIndex);
+            return name == null ? "" : name;
+        } catch (SQLException ignored) {
+            return "";
         }
-        return columns;
     }
 
-    private List<Object> rowValues(ResultSet rs, ResultValueReader valueReader) throws SQLException {
+    private List<Object> rowValues(ResultSet rs, ResultValueReader valueReader, String[] typeNameByIndex) throws SQLException {
         ResultSetMetaData meta = rs.getMetaData();
-        List<Object> row = new ArrayList<>();
-        for (int i = 1; i <= meta.getColumnCount(); i++) {
-            row.add(valueReader.read(rs, i, meta.getColumnType(i)));
+        int colCount = meta.getColumnCount();
+        List<Object> row = new ArrayList<>(colCount);
+        for (int i = 1; i <= colCount; i++) {
+            int sqlType = meta.getColumnType(i);
+            Object value;
+            if (valueReader instanceof ColumnAwareResultValueReader) {
+                String typeName = typeNameByIndex != null && i - 1 < typeNameByIndex.length
+                    ? typeNameByIndex[i - 1]
+                    : safeColumnTypeName(meta, i);
+                value = ((ColumnAwareResultValueReader) valueReader).read(rs, i, sqlType, typeName);
+            } else {
+                value = valueReader.read(rs, i, sqlType);
+            }
+            row.add(value);
         }
         return row;
     }
@@ -530,6 +559,21 @@ public final class JdbcExecutor {
         Object read(ResultSet rs, int index, int sqlType) throws SQLException;
     }
 
+    /**
+     * Optional extension of {@link ResultValueReader} that exposes the JDBC
+     * {@code getColumnTypeName} alongside the SQL type code, allowing per-driver
+     * agents to convert vendor-specific column types (e.g. PostGIS
+     * {@code geometry}) without re-querying the metadata.
+     */
+    public interface ColumnAwareResultValueReader extends ResultValueReader {
+        Object read(ResultSet rs, int index, int sqlType, String columnTypeName) throws SQLException;
+
+        @Override
+        default Object read(ResultSet rs, int index, int sqlType) throws SQLException {
+            return read(rs, index, sqlType, safeColumnTypeName(rs.getMetaData(), index));
+        }
+    }
+
     private interface ThrowingSupplier<T> {
         T get() throws Exception;
     }
@@ -539,6 +583,8 @@ public final class JdbcExecutor {
         private final Statement statement;
         private final ResultSet resultSet;
         private final List<String> columns;
+        private final List<String> columnTypes;
+        private final String[] typeNameByIndex;
         private final int maxRows;
         private final ResultValueReader valueReader;
         private int rowsRead;
@@ -550,6 +596,8 @@ public final class JdbcExecutor {
             Statement statement,
             ResultSet resultSet,
             List<String> columns,
+            List<String> columnTypes,
+            String[] typeNameByIndex,
             int maxRows,
             ResultValueReader valueReader
         ) {
@@ -557,6 +605,8 @@ public final class JdbcExecutor {
             this.statement = statement;
             this.resultSet = resultSet;
             this.columns = columns;
+            this.columnTypes = columnTypes;
+            this.typeNameByIndex = typeNameByIndex;
             this.maxRows = maxRows;
             this.valueReader = valueReader;
             this.lastAccessedAtMillis = System.currentTimeMillis();
