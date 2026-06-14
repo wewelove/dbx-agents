@@ -19,7 +19,7 @@
   "kylin": "0.1.17",
   "neo4j": "0.1.17",
   "oceanbase-oracle": "0.1.12",
-  "oracle": "0.1.20",
+  "oracle": "0.1.21",
   "oracle-legacy": "0.1.8",
   "oracle-10g": "0.1.20",
   "snowflake": "0.1.17",
