@@ -263,22 +263,38 @@ public class OracleAgent extends BaseDatabaseAgent {
     @Override
     public ObjectSource getObjectSource(String schema, String name, String objectType) {
         return unchecked(() -> {
-            String dbmsType = switch (objectType.toUpperCase(Locale.ROOT)) {
-                case "VIEW" -> "VIEW";
-                case "PROCEDURE" -> "PROCEDURE";
-                case "FUNCTION" -> "FUNCTION";
-                default -> throw new IllegalArgumentException("Unsupported object type: " + objectType);
-            };
-
+            String upperType = objectType.toUpperCase(Locale.ROOT);
             String source = "";
-            try (var stmt = requireConnected().prepareStatement("SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL")) {
-                stmt.setString(1, dbmsType);
-                stmt.setString(2, name);
-                stmt.setString(3, schema);
-                try (ResultSet rs = stmt.executeQuery()) {
-                    if (rs.next()) {
-                        String value = rs.getString(1);
-                        source = value == null ? "" : value;
+            if ("VIEW".equals(upperType)) {
+                // ALL_VIEWS is more reliable than DBMS_METADATA.GET_DDL,
+                // which fails on XE editions where XSL stylesheets are missing.
+                try (var stmt = requireConnected().prepareStatement(
+                    "SELECT TEXT FROM ALL_VIEWS WHERE OWNER = ? AND VIEW_NAME = ?")) {
+                    stmt.setString(1, schema);
+                    stmt.setString(2, name);
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        if (rs.next()) {
+                            String value = rs.getString(1);
+                            source = value == null ? "" : value;
+                        }
+                    }
+                }
+            } else {
+                String dbmsType = switch (upperType) {
+                    case "PROCEDURE" -> "PROCEDURE";
+                    case "FUNCTION" -> "FUNCTION";
+                    default -> throw new IllegalArgumentException("Unsupported object type: " + objectType);
+                };
+                try (var stmt = requireConnected().prepareStatement(
+                    "SELECT DBMS_METADATA.GET_DDL(?, ?, ?) FROM DUAL")) {
+                    stmt.setString(1, dbmsType);
+                    stmt.setString(2, name);
+                    stmt.setString(3, schema);
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        if (rs.next()) {
+                            String value = rs.getString(1);
+                            source = value == null ? "" : value;
+                        }
                     }
                 }
             }
