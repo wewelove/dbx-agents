@@ -673,6 +673,7 @@ ORDER BY c.COLUMN_ID`, []any{schema, table})
 		}
 		item.IsNullable = nullable == "Y"
 		item.IsPrimaryKey = primary != 0
+		item.DataType = oracleColumnTypeDDL(item)
 		result = append(result, item)
 	}
 	return emptyIfNil(result), rows.Err()
