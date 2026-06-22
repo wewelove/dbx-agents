@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -218,8 +219,113 @@ func TestBuildDSNRespectsExplicitCharset(t *testing.T) {
 func TestListDatabasesSQLUsesXuguDictionary(t *testing.T) {
 	sqlText := strings.ToUpper(xuguListDatabasesSQL)
 
-	if !strings.Contains(sqlText, "SYS_DATABASES") {
-		t.Fatalf("database listing should query SYS_DATABASES, got: %s", xuguListDatabasesSQL)
+	if !strings.Contains(sqlText, "ALL_DATABASES") || strings.Contains(sqlText, "SYS_DATABASES") {
+		t.Fatalf("database listing should query low-privilege ALL_DATABASES, got: %s", xuguListDatabasesSQL)
+	}
+}
+
+func TestFallbackDatabasesFromParams(t *testing.T) {
+	cases := []struct {
+		name   string
+		params connectParams
+		want   string
+	}{
+		{
+			name: "database field",
+			params: connectParams{
+				Database: "LOWPRIV",
+			},
+			want: "LOWPRIV",
+		},
+		{
+			name: "dbx url",
+			params: connectParams{
+				ConnectionString: "xugu://user:secret@db.example.com:5138/demo",
+			},
+			want: "demo",
+		},
+		{
+			name: "jdbc url",
+			params: connectParams{
+				ConnectionString: "jdbc:xugu://db.example.com:5138/reporting",
+			},
+			want: "reporting",
+		},
+		{
+			name: "native dsn",
+			params: connectParams{
+				ConnectionString: "IP=db.example.com;DB=SYSTEM;User=SYSDBA;PWD=secret;Port=5138",
+			},
+			want: "SYSTEM",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fallbackDatabasesFromParams(tc.params)
+			if len(got) != 1 || got[0].Name != tc.want {
+				t.Fatalf("unexpected fallback databases: got=%v want=%s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUseDatabaseSkipsConfiguredDatabase(t *testing.T) {
+	s := newServer()
+	s.params = connectParams{Database: "SYSTEM"}
+
+	if err := s.useDatabase("system"); err != nil {
+		t.Fatalf("expected configured database USE to be skipped, got: %v", err)
+	}
+}
+
+func TestConfiguredDatabaseName(t *testing.T) {
+	cases := []struct {
+		params connectParams
+		want   string
+	}{
+		{params: connectParams{Database: "SYSTEM"}, want: "SYSTEM"},
+		{params: connectParams{ConnectionString: "xugu://user:secret@db.example.com:5138/demo"}, want: "demo"},
+		{params: connectParams{ConnectionString: "jdbc:xugu://db.example.com:5138/reporting"}, want: "reporting"},
+		{params: connectParams{ConnectionString: "IP=db.example.com;DB=SYSTEM;User=SYSDBA;PWD=secret"}, want: "SYSTEM"},
+	}
+
+	for _, tc := range cases {
+		if got := configuredDatabaseName(tc.params); got != tc.want {
+			t.Fatalf("configuredDatabaseName(%+v) = %q, want %q", tc.params, got, tc.want)
+		}
+	}
+}
+
+func TestSchemaListingSQLUsesLowPrivilegeDictionary(t *testing.T) {
+	sqlText := strings.ToUpper(xuguListSchemasSQL)
+
+	if !strings.Contains(sqlText, "ALL_SCHEMAS") || strings.Contains(sqlText, "SYS_SCHEMAS") {
+		t.Fatalf("schema listing should query low-privilege ALL_SCHEMAS, got: %s", xuguListSchemasSQL)
+	}
+}
+
+func TestPrimaryKeySQLUsesLowPrivilegeDictionary(t *testing.T) {
+	sqlText := strings.ToUpper(xuguPrimaryKeyColumnsSQL)
+
+	for _, want := range []string{"ALL_CONSTRAINTS", "ALL_TABLES", "ALL_SCHEMAS"} {
+		if !strings.Contains(sqlText, want) {
+			t.Fatalf("primary key listing should query %s, got: %s", want, xuguPrimaryKeyColumnsSQL)
+		}
+	}
+	for _, forbidden := range []string{"SYS_CONSTRAINTS", "SYS_TABLES", "SYS_SCHEMAS"} {
+		if strings.Contains(sqlText, forbidden) {
+			t.Fatalf("primary key listing should not query %s, got: %s", forbidden, xuguPrimaryKeyColumnsSQL)
+		}
+	}
+}
+
+func TestXuguMetadataAccessErrorDetection(t *testing.T) {
+	if !isXuguMetadataAccessError(errors.New("[E18012] 权限不够")) {
+		t.Fatal("expected E18012 permission error to be treated as metadata access error")
+	}
+	if isXuguMetadataAccessError(errors.New("network timeout")) {
+		t.Fatal("network errors should not trigger database-list fallback")
 	}
 }
 

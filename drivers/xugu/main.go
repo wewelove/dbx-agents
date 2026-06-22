@@ -22,8 +22,20 @@ const defaultMaxRows = 1000
 const defaultXuguPort = 5138
 const xuguListDatabasesSQL = `
 SELECT DB_NAME
-FROM SYS_DATABASES
+FROM ALL_DATABASES
 ORDER BY DB_NAME`
+const xuguListSchemasSQL = `
+SELECT SCHEMA_NAME
+FROM ALL_SCHEMAS
+ORDER BY SCHEMA_NAME`
+const xuguPrimaryKeyColumnsSQL = `
+SELECT c.DEFINE
+FROM ALL_CONSTRAINTS c
+JOIN ALL_TABLES t ON t.DB_ID = c.DB_ID AND t.TABLE_ID = c.TABLE_ID
+JOIN ALL_SCHEMAS s ON s.DB_ID = t.DB_ID AND s.SCHEMA_ID = t.SCHEMA_ID
+WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
+  AND UPPER(t.TABLE_NAME) = UPPER(?)
+  AND c.CONS_TYPE = 'P'`
 
 type request struct {
 	ID     json.RawMessage            `json:"id"`
@@ -591,6 +603,9 @@ func (s *server) useDatabase(database string) error {
 	if database == "" {
 		return nil
 	}
+	if strings.EqualFold(database, configuredDatabaseName(s.params)) {
+		return nil
+	}
 	db, err := s.requireDB()
 	if err != nil {
 		return err
@@ -602,6 +617,9 @@ func (s *server) useDatabase(database string) error {
 func (s *server) listDatabases() ([]databaseInfo, error) {
 	rows, err := s.queryRows(xuguListDatabasesSQL, nil)
 	if err != nil {
+		if fallback := fallbackDatabasesFromParams(s.params); len(fallback) > 0 && isXuguMetadataAccessError(err) {
+			return fallback, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -616,12 +634,65 @@ func (s *server) listDatabases() ([]databaseInfo, error) {
 	return emptyIfNil(result), rows.Err()
 }
 
+func fallbackDatabasesFromParams(params connectParams) []databaseInfo {
+	if name := configuredDatabaseName(params); name != "" {
+		return []databaseInfo{{Name: name}}
+	}
+	return nil
+}
+
+func configuredDatabaseName(params connectParams) string {
+	if name := strings.TrimSpace(params.Database); name != "" {
+		return name
+	}
+	connectionString := strings.TrimSpace(params.ConnectionString)
+	if parsed := parseXuguURL(connectionString); parsed.Database != "" {
+		return parsed.Database
+	}
+	if jdbc := parseXuguJDBCURL(connectionString); jdbc.Database != "" {
+		return jdbc.Database
+	}
+	if value := xuguDSNValue(connectionString, "DB"); value != "" {
+		return value
+	}
+	return ""
+}
+
+func isXuguMetadataAccessError(err error) bool {
+	message := strings.ToUpper(err.Error())
+	return strings.Contains(message, "E18012") ||
+		strings.Contains(message, "权限不够") ||
+		strings.Contains(message, "ALL_DATABASES") ||
+		strings.Contains(message, "SYS_DATABASES") ||
+		strings.Contains(message, "ALL_SCHEMAS") ||
+		strings.Contains(message, "SYS_SCHEMAS") ||
+		strings.Contains(message, "ALL_TABLES") ||
+		strings.Contains(message, "SYS_TABLES") ||
+		strings.Contains(message, "ALL_VIEWS") ||
+		strings.Contains(message, "SYS_VIEWS") ||
+		strings.Contains(message, "ALL_CONSTRAINTS") ||
+		strings.Contains(message, "SYS_COLUMNS") ||
+		strings.Contains(message, "SYS_CONSTRAINTS") ||
+		strings.Contains(message, "SYS_INDEXES") ||
+		strings.Contains(message, "SYS_TRIGGERS")
+}
+
+func xuguDSNValue(dsn string, key string) string {
+	for _, part := range strings.Split(dsn, ";") {
+		name, value, ok := strings.Cut(part, "=")
+		if ok && strings.EqualFold(strings.TrimSpace(name), key) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func (s *server) listSchemas() ([]string, error) {
-	rows, err := s.queryRows(`
-SELECT SCHEMA_NAME
-FROM SYS_SCHEMAS
-ORDER BY IS_SYS, SCHEMA_NAME`, nil)
+	rows, err := s.queryRows(xuguListSchemasSQL, nil)
 	if err != nil {
+		if fallback := strings.ToUpper(strings.TrimSpace(s.params.Username)); fallback != "" && isXuguMetadataAccessError(err) {
+			return []string{fallback}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -644,6 +715,9 @@ JOIN SYS_USERS u ON u.DB_ID = s.DB_ID AND u.USER_ID = s.USER_ID
 WHERE UPPER(u.USER_NAME) = UPPER(?)
 ORDER BY CASE WHEN UPPER(s.SCHEMA_NAME) = UPPER(?) THEN 0 ELSE 1 END, s.SCHEMA_NAME`, []any{s.params.Username, s.params.Username})
 	if err != nil {
+		if fallback := strings.ToUpper(strings.TrimSpace(s.params.Username)); fallback != "" && isXuguMetadataAccessError(err) {
+			return fallback, nil
+		}
 		return "", err
 	}
 	defer rows.Close()
@@ -675,13 +749,13 @@ func (s *server) listTables(schema string) ([]tableInfo, error) {
 	}
 	rows, err := s.queryRows(`
 SELECT t.TABLE_NAME, 'TABLE' AS TABLE_TYPE, t.COMMENTS
-FROM SYS_TABLES t
-JOIN SYS_SCHEMAS s ON s.DB_ID = t.DB_ID AND s.SCHEMA_ID = t.SCHEMA_ID
+FROM ALL_TABLES t
+JOIN ALL_SCHEMAS s ON s.DB_ID = t.DB_ID AND s.SCHEMA_ID = t.SCHEMA_ID
 WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
 UNION ALL
 SELECT v.VIEW_NAME, 'VIEW' AS TABLE_TYPE, v.COMMENTS
-FROM SYS_VIEWS v
-JOIN SYS_SCHEMAS s ON s.DB_ID = v.DB_ID AND s.SCHEMA_ID = v.SCHEMA_ID
+FROM ALL_VIEWS v
+JOIN ALL_SCHEMAS s ON s.DB_ID = v.DB_ID AND s.SCHEMA_ID = v.SCHEMA_ID
 WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
 ORDER BY 2, 1`, []any{schema, schema})
 	if err != nil {
@@ -706,32 +780,15 @@ func (s *server) listObjects(schema string) ([]objectInfo, error) {
 	}
 	rows, err := s.queryRows(`
 SELECT t.TABLE_NAME, 'TABLE' AS OBJECT_TYPE, t.COMMENTS
-FROM SYS_TABLES t
-JOIN SYS_SCHEMAS s ON s.DB_ID = t.DB_ID AND s.SCHEMA_ID = t.SCHEMA_ID
+FROM ALL_TABLES t
+JOIN ALL_SCHEMAS s ON s.DB_ID = t.DB_ID AND s.SCHEMA_ID = t.SCHEMA_ID
 WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
 UNION ALL
 SELECT v.VIEW_NAME, 'VIEW' AS OBJECT_TYPE, v.COMMENTS
-FROM SYS_VIEWS v
-JOIN SYS_SCHEMAS s ON s.DB_ID = v.DB_ID AND s.SCHEMA_ID = v.SCHEMA_ID
+FROM ALL_VIEWS v
+JOIN ALL_SCHEMAS s ON s.DB_ID = v.DB_ID AND s.SCHEMA_ID = v.SCHEMA_ID
 WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
-UNION ALL
-SELECT p.PROC_NAME,
-       CASE WHEN p.RET_TYPE IS NULL THEN 'PROCEDURE' ELSE 'FUNCTION' END AS OBJECT_TYPE,
-       p.COMMENTS
-FROM SYS_PROCEDURES p
-JOIN SYS_SCHEMAS s ON s.DB_ID = p.DB_ID AND s.SCHEMA_ID = p.SCHEMA_ID
-WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
-UNION ALL
-SELECT k.PACK_NAME, 'PACKAGE' AS OBJECT_TYPE, k.COMMENTS
-FROM SYS_PACKAGES k
-JOIN SYS_SCHEMAS s ON s.DB_ID = k.DB_ID AND s.SCHEMA_ID = k.SCHEMA_ID
-WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
-UNION ALL
-SELECT tr.TRIG_NAME, 'TRIGGER' AS OBJECT_TYPE, tr.COMMENTS
-FROM SYS_TRIGGERS tr
-JOIN SYS_SCHEMAS s ON s.DB_ID = tr.DB_ID AND s.SCHEMA_ID = tr.SCHEMA_ID
-WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
-ORDER BY 2, 1`, []any{schema, schema, schema, schema, schema})
+ORDER BY 2, 1`, []any{schema, schema})
 	if err != nil {
 		return nil, err
 	}
@@ -768,6 +825,9 @@ WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
   AND (c.IS_HIDE IS NULL OR c.IS_HIDE = FALSE)
 ORDER BY c.COL_NO`, []any{schema, table})
 	if err != nil {
+		if isXuguMetadataAccessError(err) {
+			return s.columnsFromSelect(schema, table, primaryKeys)
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -794,16 +854,46 @@ ORDER BY c.COL_NO`, []any{schema, table})
 	return emptyIfNil(result), rows.Err()
 }
 
-func (s *server) primaryKeyColumns(schema, table string) (map[string]bool, error) {
-	rows, err := s.queryRows(`
-SELECT c.DEFINE
-FROM SYS_CONSTRAINTS c
-JOIN SYS_TABLES t ON t.DB_ID = c.DB_ID AND t.TABLE_ID = c.TABLE_ID
-JOIN SYS_SCHEMAS s ON s.DB_ID = t.DB_ID AND s.SCHEMA_ID = t.SCHEMA_ID
-WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
-  AND UPPER(t.TABLE_NAME) = UPPER(?)
-  AND c.CONS_TYPE = 'P'`, []any{schema, table})
+func (s *server) columnsFromSelect(schema, table string, primaryKeys map[string]bool) ([]columnInfo, error) {
+	rows, err := s.queryRows(
+		"SELECT * FROM "+quoteIdentifier(schema)+"."+quoteIdentifier(table)+" WHERE 1 = 0",
+		nil,
+	)
 	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	types, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]columnInfo, 0, len(types))
+	for _, columnType := range types {
+		item := columnInfo{
+			Name:         columnType.Name(),
+			DataType:     columnType.DatabaseTypeName(),
+			IsPrimaryKey: primaryKeys[strings.ToUpper(columnType.Name())],
+		}
+		if nullable, ok := columnType.Nullable(); ok {
+			item.IsNullable = nullable
+		} else {
+			item.IsNullable = true
+		}
+		if length, ok := columnType.Length(); ok {
+			value := int(length)
+			item.CharacterMaximumLength = &value
+		}
+		result = append(result, item)
+	}
+	return emptyIfNil(result), nil
+}
+
+func (s *server) primaryKeyColumns(schema, table string) (map[string]bool, error) {
+	rows, err := s.queryRows(xuguPrimaryKeyColumnsSQL, []any{schema, table})
+	if err != nil {
+		if isXuguMetadataAccessError(err) {
+			return map[string]bool{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -835,6 +925,9 @@ WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
   AND UPPER(t.TABLE_NAME) = UPPER(?)
 ORDER BY i.INDEX_NAME`, []any{schema, table})
 	if err != nil {
+		if isXuguMetadataAccessError(err) {
+			return []indexInfo{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -875,6 +968,9 @@ WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
   AND c.CONS_TYPE = 'F'
 ORDER BY c.CONS_NAME`, []any{schema, table})
 	if err != nil {
+		if isXuguMetadataAccessError(err) {
+			return []foreignKeyInfo{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -911,6 +1007,9 @@ WHERE UPPER(s.SCHEMA_NAME) = UPPER(?)
   AND UPPER(t.TABLE_NAME) = UPPER(?)
 ORDER BY tr.TRIG_NAME`, []any{schema, table})
 	if err != nil {
+		if isXuguMetadataAccessError(err) {
+			return []triggerInfo{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
